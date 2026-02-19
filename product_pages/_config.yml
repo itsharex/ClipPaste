@@ -12,7 +12,6 @@ theme: null
 # Exclude files from processing
 exclude:
   - README.md
-  - gemini-TODO.md
   - appstore_or_others.md
   - appstore_submit.md
   - fix_warning_expr.md
