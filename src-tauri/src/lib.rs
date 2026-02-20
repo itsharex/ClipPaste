@@ -347,7 +347,10 @@ pub fn run_app() {
             commands::pick_file,
             commands::get_layout_config,
             commands::test_log,
-            commands::focus_window
+            commands::focus_window,
+            commands::get_data_directory,
+            commands::set_data_directory,
+            commands::pick_folder
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -530,7 +533,29 @@ pub fn animate_window_hide(window: &tauri::WebviewWindow, on_done: Option<Box<dy
 }
 
 
+pub fn get_config_path() -> std::path::PathBuf {
+    let default_config_dir = match dirs::config_dir() {
+        Some(path) => path.join("ClipPaste"),
+        None => std::env::current_dir().unwrap_or(std::path::PathBuf::from(".")).join("ClipPaste"),
+    };
+    default_config_dir.join("config.json")
+}
+
 fn get_data_dir() -> std::path::PathBuf {
+    // Check if custom data directory is set in config.json
+    let config_path = get_config_path();
+    if let Ok(config_content) = fs::read_to_string(&config_path) {
+        if let Ok(config) = serde_json::from_str::<serde_json::Value>(&config_content) {
+            if let Some(custom_path) = config.get("data_directory").and_then(|v| v.as_str()) {
+                let custom_path = std::path::PathBuf::from(custom_path);
+                if custom_path.exists() || custom_path.parent().map(|p| p.exists()).unwrap_or(false) {
+                    return custom_path;
+                }
+            }
+        }
+    }
+
+    // Fallback to default location
     let current_dir = std::env::current_dir().unwrap_or(std::path::PathBuf::from("."));
     match dirs::data_dir() {
         Some(path) => path.join("ClipPaste"),

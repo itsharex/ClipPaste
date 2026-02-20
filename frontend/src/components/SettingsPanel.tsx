@@ -42,6 +42,9 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
   const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
 
+  // Data Directory State
+  const [dataDirectory, setDataDirectory] = useState<string>('');
+
   // Apply theme immediately when settings.theme changes
   useTheme(settings.theme);
 
@@ -142,6 +145,7 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
     invoke<string[]>('get_ignored_apps').then(setIgnoredApps).catch(console.error);
     getVersion().then(setAppVersion).catch(console.error);
     loadFolders();
+    invoke<string>('get_data_directory').then(setDataDirectory).catch(console.error);
   }, []);
 
   const handleAddIgnoredApp = async () => {
@@ -299,6 +303,22 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
       }
     } catch (e) {
       toast.error(`Check failed: ${e}`);
+    }
+  };
+
+  const handleSelectDataDirectory = async () => {
+    try {
+      const selectedPath = await invoke<string>('pick_folder');
+      if (selectedPath) {
+        await invoke('set_data_directory', { newPath: selectedPath });
+        setDataDirectory(selectedPath);
+        toast.success('Data directory changed. Please restart the application for changes to take effect.', {
+          duration: 5000,
+        });
+      }
+    } catch (e) {
+      console.error('Failed to select data directory:', e);
+      toast.error(`Failed to select folder: ${e}`);
     }
   };
 
@@ -560,6 +580,38 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
                           ))
                         )}
                       </div>
+                    </div>
+                  </section>
+
+                  <section className="space-y-4">
+                    <h3 className="text-sm font-medium text-muted-foreground">Data Storage</h3>
+                    <div className="space-y-3">
+                      <label className="block">
+                        <span className="text-sm font-medium">Data Directory</span>
+                        <p className="text-xs text-muted-foreground">
+                          Choose where to store clipboard database (e.g., Google Drive folder for sync)
+                        </p>
+                      </label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={dataDirectory}
+                          readOnly
+                          className="flex-1 rounded-lg border border-border bg-input px-3 py-2 text-sm text-muted-foreground focus:outline-none"
+                          placeholder="Default location"
+                        />
+                        <button
+                          onClick={handleSelectDataDirectory}
+                          className="btn btn-secondary px-4"
+                          title="Choose folder"
+                        >
+                          <FolderOpen size={16} className="mr-2" />
+                          Choose Folder
+                        </button>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Current: {dataDirectory || 'Default location'}
+                      </p>
                     </div>
                   </section>
 

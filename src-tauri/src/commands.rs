@@ -8,6 +8,7 @@ use std::sync::Arc;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use crate::models::{Clip, Folder, ClipboardItem, FolderItem};
 use dark_light::Mode;
+use dirs;
 
 
 
@@ -764,8 +765,143 @@ pub async fn pick_file() -> Result<String, String> {
 }
 
 #[tauri::command]
+pub async fn pick_folder() -> Result<String, String> {
+    use std::process::Command;
+    #[cfg(target_os = "windows")]
+    {
+        let ps_script = "Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.FolderBrowserDialog; $d.Description = 'Select folder to store ClipPaste data'; $null = $d.ShowDialog(); $d.SelectedPath";
+        let output = Command::new("powershell")
+            .args(["-NoProfile", "-Command", ps_script])
+            .output()
+            .map_err(|e| e.to_string())?;
+
+        if output.status.success() {
+            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if path.is_empty() {
+                return Err("No folder selected".to_string());
+            }
+            Ok(path)
+        } else {
+            Err("Failed to open folder picker".to_string())
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Err("Not supported on this OS".to_string())
+    }
+}
+
+#[tauri::command]
 pub fn get_layout_config() -> serde_json::Value {
     serde_json::json!({
         "window_height": crate::constants::WINDOW_HEIGHT,
     })
+}
+
+fn get_config_path() -> std::path::PathBuf {
+    let default_config_dir = match dirs::config_dir() {
+        Some(path) => path.join("ClipPaste"),
+        None => std::env::current_dir().unwrap_or(std::path::PathBuf::from(".")).join("ClipPaste"),
+    };
+    default_config_dir.join("config.json")
+}
+
+fn get_default_data_dir() -> std::path::PathBuf {
+    let current_dir = std::env::current_dir().unwrap_or(std::path::PathBuf::from("."));
+    match dirs::data_dir() {
+        Some(path) => path.join("ClipPaste"),
+        None => current_dir.join("ClipPaste"),
+    }
+}
+
+#[tauri::command]
+pub fn get_data_directory() -> Result<String, String> {
+    let config_path = get_config_path();
+    if let Ok(config_content) = std::fs::read_to_string(&config_path) {
+        if let Ok(config) = serde_json::from_str::<serde_json::Value>(&config_content) {
+            if let Some(custom_path) = config.get("data_directory").and_then(|v| v.as_str()) {
+                return Ok(custom_path.to_string());
+            }
+        }
+    }
+    
+    // Return default location
+    let default_dir = get_default_data_dir();
+    Ok(default_dir.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub async fn set_data_directory(
+    new_path: String,
+    _db: tauri::State<'_, Arc<Database>>,
+    app: AppHandle,
+) -> Result<(), String> {
+    use std::path::PathBuf;
+    
+    let new_path_buf = PathBuf::from(&new_path);
+    
+    // Validate path exists or can be created
+    if !new_path_buf.exists() {
+        if let Some(parent) = new_path_buf.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| format!("Cannot create directory: {}", e))?;
+        } else {
+            return Err("Invalid path".to_string());
+        }
+    }
+    
+    // Get current DB path (read from config or use default)
+    let config_path = get_config_path();
+    let current_data_dir = if let Ok(config_content) = std::fs::read_to_string(&config_path) {
+        if let Ok(config) = serde_json::from_str::<serde_json::Value>(&config_content) {
+            if let Some(custom_path) = config.get("data_directory").and_then(|v| v.as_str()) {
+                PathBuf::from(custom_path)
+            } else {
+                get_default_data_dir()
+            }
+        } else {
+            get_default_data_dir()
+        }
+    } else {
+        get_default_data_dir()
+    };
+    
+    let current_db_path = current_data_dir.join("clipboard.db");
+    let new_db_path = new_path_buf.join("clipboard.db");
+    
+    // If DB exists in current location and new location is different, migrate it
+    if current_db_path.exists() && current_db_path != new_db_path {
+        log::info!("Migrating DB from {:?} to {:?}", current_db_path, new_db_path);
+        
+        // Ensure new directory exists
+        std::fs::create_dir_all(&new_path_buf).map_err(|e| format!("Cannot create directory: {}", e))?;
+        
+        // Copy DB file
+        std::fs::copy(&current_db_path, &new_db_path)
+            .map_err(|e| format!("Failed to copy database: {}", e))?;
+        
+        log::info!("Database migrated successfully");
+    }
+    
+    // Save config
+    let config_path = get_config_path();
+    if let Some(config_dir) = config_path.parent() {
+        std::fs::create_dir_all(config_dir).ok();
+    }
+    
+    let config = serde_json::json!({
+        "data_directory": new_path
+    });
+    
+    std::fs::write(&config_path, serde_json::to_string_pretty(&config).unwrap())
+        .map_err(|e| format!("Failed to save config: {}", e))?;
+    
+    log::info!("Data directory set to: {}", new_path);
+    
+    // Notify frontend that restart is needed
+    let _ = app.emit("data-directory-changed", &serde_json::json!({
+        "message": "Data directory changed. Please restart the application.",
+        "new_path": new_path
+    }));
+    
+    Ok(())
 }

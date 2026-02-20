@@ -29,6 +29,7 @@ export interface Settings {
   mica_effect?: string;
   auto_paste: boolean;
   ignore_ghost_clips: boolean;
+  data_directory?: string;
 }
 
 export type ClipType = 'text' | 'image' | 'html' | 'rtf' | 'file' | 'url';
