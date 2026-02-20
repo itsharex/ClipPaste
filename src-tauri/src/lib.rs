@@ -206,7 +206,7 @@ pub fn run_app() {
             }
         })
         .setup(move |app| {
-            log::info!("Clipboard starting...");
+            log::info!("ClipPaste starting...");
             let _ = app.track_event("startup", None);
             log::info!("Database path: {}", db_path_str);
             if let Ok(log_dir) = app.path().app_log_dir() {
@@ -216,7 +216,7 @@ pub fn run_app() {
             let db_for_clipboard = db_arc.clone();
 
             let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let show_i = MenuItem::with_id(app, "show", "Show Clipboard", true, None::<&str>)?;
+            let show_i = MenuItem::with_id(app, "show", "Show ClipPaste", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show_i, &quit_i])?;
 
             let icon_data = include_bytes!("../icons/tray.png");
@@ -228,7 +228,7 @@ pub fn run_app() {
             let _tray = TrayIconBuilder::new()
                 .icon(icon)
                 .menu(&menu)
-                .tooltip("Clipboard")
+                .tooltip("ClipPaste")
                 .on_menu_event(move |app, event| {
                     if event.id.as_ref() == "quit" {
                         app.exit(0);
@@ -533,8 +533,8 @@ pub fn animate_window_hide(window: &tauri::WebviewWindow, on_done: Option<Box<dy
 fn get_data_dir() -> std::path::PathBuf {
     let current_dir = std::env::current_dir().unwrap_or(std::path::PathBuf::from("."));
     match dirs::data_dir() {
-        Some(path) => path.join("Clipboard"),
-        None => current_dir.join("Clipboard"),
+        Some(path) => path.join("ClipPaste"),
+        None => current_dir.join("ClipPaste"),
     }
 }
 

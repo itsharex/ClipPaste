@@ -154,7 +154,7 @@ pub async fn paste_clip(id: String, app: AppHandle, window: tauri::WebviewWindow
                         Ok(_) => { last_err.clear(); break; },
                         Err(e) => {
                             last_err = e.to_string();
-                            log::warn!("Clipboard write (text) attempt {} failed: {}. Retrying...", i+1, last_err);
+                            log::warn!("ClipPaste clipboard write (text) attempt {} failed: {}. Retrying...", i+1, last_err);
                             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                         }
                     }
