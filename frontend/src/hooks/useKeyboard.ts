@@ -23,7 +23,7 @@ export function useKeyboard(options: KeyboardOptions) {
         options.onSearch();
       }
 
-      if (e.key === 'Delete' && options.onDelete) {
+      if (e.key === 'Delete' && (e.ctrlKey || e.metaKey) && options.onDelete) {
         e.preventDefault();
         options.onDelete();
       }

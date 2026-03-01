@@ -88,6 +88,7 @@ export const ClipCard = memo(function ClipCard({
 
   return (
     <div
+      data-clip-id={clip.id}
       style={{
         width: TOTAL_COLUMN_WIDTH - LAYOUT.CARD_GAP,
         height: LAYOUT.WINDOW_HEIGHT - LAYOUT.CONTROL_BAR_HEIGHT - LAYOUT.CARD_VERTICAL_PADDING * 2,

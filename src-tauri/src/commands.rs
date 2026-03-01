@@ -165,8 +165,8 @@ pub async fn paste_clip(id: String, app: AppHandle, window: tauri::WebviewWindow
                 }
             }
 
-            // Manually perform the LRU bump (update created_at)
-            let _ = sqlx::query(r#"UPDATE clips SET created_at = CURRENT_TIMESTAMP WHERE uuid = ?"#)
+            // Track when this clip was last pasted (used for sort order)
+            let _ = sqlx::query(r#"UPDATE clips SET last_pasted_at = CURRENT_TIMESTAMP WHERE uuid = ?"#)
                 .bind(&uuid)
                 .execute(pool)
                 .await;
@@ -320,6 +320,19 @@ pub async fn rename_folder(id: String, name: String, db: tauri::State<'_, Arc<Da
 }
 
 #[tauri::command]
+pub async fn reorder_folders(folder_ids: Vec<String>, db: tauri::State<'_, Arc<Database>>) -> Result<(), String> {
+    let pool = &db.pool;
+    for (idx, id) in folder_ids.iter().enumerate() {
+        let folder_id: i64 = id.parse().map_err(|_| "Invalid folder ID")?;
+        sqlx::query("UPDATE folders SET position = ? WHERE id = ?")
+            .bind(idx as i64)
+            .bind(folder_id)
+            .execute(pool).await.map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn search_clips(query: String, filter_id: Option<String>, limit: i64, offset: i64, db: tauri::State<'_, Arc<Database>>) -> Result<Vec<ClipboardItem>, String> {
     let pool = &db.pool;
 
@@ -383,7 +396,7 @@ pub async fn search_clips(query: String, filter_id: Option<String>, limit: i64, 
 pub async fn get_folders(db: tauri::State<'_, Arc<Database>>) -> Result<Vec<FolderItem>, String> {
     let pool = &db.pool;
 
-    let folders: Vec<Folder> = sqlx::query_as(r#"SELECT * FROM folders ORDER BY created_at"#)
+    let folders: Vec<Folder> = sqlx::query_as(r#"SELECT * FROM folders ORDER BY position, id"#)
         .fetch_all(pool).await.map_err(|e| e.to_string())?;
 
     // Get counts for all folders in one query
@@ -628,7 +641,8 @@ pub async fn get_clipboard_history_size(db: tauri::State<'_, Arc<Database>>) -> 
 pub async fn clear_clipboard_history(db: tauri::State<'_, Arc<Database>>) -> Result<(), String> {
     let pool = &db.pool;
 
-    sqlx::query(r#"DELETE FROM clips WHERE is_deleted = 1"#)
+    // Only delete soft-deleted clips that are NOT in any folder
+    sqlx::query(r#"DELETE FROM clips WHERE is_deleted = 1 AND folder_id IS NULL"#)
         .execute(pool).await.map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -646,11 +660,15 @@ pub async fn clear_all_clips(db: tauri::State<'_, Arc<Database>>) -> Result<(), 
 pub async fn remove_duplicate_clips(db: tauri::State<'_, Arc<Database>>) -> Result<i64, String> {
     let pool = &db.pool;
 
+    // Only remove duplicates from clips that are NOT in any folder
+    // Folder items are protected and can only be deleted manually
     let result = sqlx::query(r#"
         DELETE FROM clips
-        WHERE id NOT IN (
+        WHERE folder_id IS NULL
+        AND id NOT IN (
             SELECT MIN(id)
             FROM clips
+            WHERE folder_id IS NULL
             GROUP BY content_hash
         )
     "#)

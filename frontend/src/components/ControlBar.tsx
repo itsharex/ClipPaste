@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { FolderItem } from '../types';
 import { Search, Plus, MoreHorizontal, X } from 'lucide-react';
 import { clsx } from 'clsx';
@@ -20,6 +20,7 @@ interface ControlBarProps {
   onDragLeave: () => void;
   totalClipCount: number;
   onFolderContextMenu?: (e: React.MouseEvent, folderId: string) => void;
+  onReorderFolders?: (folderIds: string[]) => void;
   theme?: 'light' | 'dark';
 }
 
@@ -40,10 +41,32 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
     onDragLeave,
     totalClipCount,
     onFolderContextMenu,
+    onReorderFolders,
     theme = 'dark',
   },
   ref
 ) {
+  const [draggingFolderId, setDraggingFolderId] = useState<string | null>(null);
+  const [dropTargetFolderId, setDropTargetFolderId] = useState<string | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  // Scroll selected folder tab into view when selection changes
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    const activeBtn = container.querySelector('[data-folder-active="true"]') as HTMLElement | null;
+    if (!activeBtn) return;
+    const containerLeft = container.scrollLeft;
+    const containerRight = containerLeft + container.clientWidth;
+    const btnLeft = activeBtn.offsetLeft;
+    const btnRight = btnLeft + activeBtn.offsetWidth;
+    if (btnLeft < containerLeft) {
+      container.scrollTo({ left: btnLeft - 8, behavior: 'smooth' });
+    } else if (btnRight > containerRight) {
+      container.scrollTo({ left: btnRight - container.clientWidth + 8, behavior: 'smooth' });
+    }
+  }, [selectedFolder]);
+
   const allCategories = [
     { id: null, name: 'All', count: totalClipCount },
     ...folders.map((f) => ({ ...f, count: f.item_count })),
@@ -273,6 +296,7 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
 
       {/* Category Pills (Always visible) */}
       <div
+        ref={scrollContainerRef}
         className="no-scrollbar mask-gradient-right flex flex-1 items-center gap-2 overflow-x-auto p-1"
         style={{ WebkitAppRegion: 'no-drag' } as any}
       >
@@ -305,6 +329,8 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
           return (
             <button
               key={cat.id ?? 'all'}
+              data-folder-active={isActive ? 'true' : undefined}
+              draggable={!!cat.id && !isDragging}
               onClick={() => onSelectFolder(cat.id)}
               onMouseEnter={() => handleMouseEnter(cat.id)}
               onMouseLeave={handleMouseLeave}
@@ -316,6 +342,40 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
                   onFolderContextMenu(e, cat.id);
                 }
               }}
+              onDragStart={(e) => {
+                if (!cat.id) return;
+                setDraggingFolderId(cat.id);
+                e.dataTransfer.effectAllowed = 'move';
+              }}
+              onDragEnd={() => {
+                setDraggingFolderId(null);
+                setDropTargetFolderId(null);
+              }}
+              onDragOver={(e) => {
+                if (!cat.id || !draggingFolderId || cat.id === draggingFolderId) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                setDropTargetFolderId(cat.id);
+              }}
+              onDragLeave={() => {
+                setDropTargetFolderId(null);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                if (draggingFolderId && cat.id && draggingFolderId !== cat.id && onReorderFolders) {
+                  const folderIds = folders.map((f) => f.id);
+                  const dragIdx = folderIds.indexOf(draggingFolderId);
+                  const dropIdx = folderIds.indexOf(cat.id);
+                  if (dragIdx !== -1 && dropIdx !== -1) {
+                    const reordered = [...folderIds];
+                    const [dragged] = reordered.splice(dragIdx, 1);
+                    reordered.splice(dropIdx, 0, dragged);
+                    onReorderFolders(reordered);
+                  }
+                }
+                setDraggingFolderId(null);
+                setDropTargetFolderId(null);
+              }}
               style={
                 {
                   WebkitAppRegion: 'no-drag',
@@ -326,7 +386,9 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
               className={clsx(
                 'whitespace-nowrap rounded-full px-4 py-1.5 text-sm font-medium transition-all',
                 colorClass,
-                isDragging && cat.id === dragTargetFolderId && 'bg-accent ring-2 ring-primary'
+                isDragging && cat.id === dragTargetFolderId && 'bg-accent ring-2 ring-primary',
+                draggingFolderId === cat.id && 'opacity-40',
+                dropTargetFolderId === cat.id && draggingFolderId && 'ring-2 ring-white/60'
               )}
             >
               {cat.name}

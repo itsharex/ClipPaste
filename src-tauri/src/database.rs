@@ -72,6 +72,14 @@ impl Database {
             )
         "#).execute(&self.pool).await?;
 
+        // Add last_pasted_at column if it doesn't exist yet (safe to run multiple times)
+        let _ = sqlx::query("ALTER TABLE clips ADD COLUMN last_pasted_at DATETIME DEFAULT NULL")
+            .execute(&self.pool).await;
+
+        // Add position column to folders if it doesn't exist yet (safe to run multiple times)
+        let _ = sqlx::query("ALTER TABLE folders ADD COLUMN position INTEGER DEFAULT 0")
+            .execute(&self.pool).await;
+
        Ok(())
     }
 

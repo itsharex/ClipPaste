@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, useEffect } from 'react';
 import { ClipboardItem } from '../types';
 import { ClipCard } from './ClipCard';
 
@@ -12,6 +12,7 @@ interface ClipListProps {
   onCopy: (clipId: string) => void;
   onDelete: (clipId: string) => void;
   onLoadMore: () => void;
+  resetScrollKey?: number;
   onDragStart: (clipId: string, startX: number, startY: number) => void;
   onCardContextMenu?: (e: React.MouseEvent, clipId: string) => void;
 }
@@ -25,10 +26,28 @@ export function ClipList({
   onPaste,
   onCopy,
   onLoadMore,
+  resetScrollKey,
   onDragStart,
   onCardContextMenu,
 }: ClipListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Scroll selected card into view when navigating with arrow keys
+  useEffect(() => {
+    if (!selectedClipId || !containerRef.current) return;
+    const card = containerRef.current.querySelector(`[data-clip-id="${selectedClipId}"]`);
+    if (card) {
+      card.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+    }
+  }, [selectedClipId]);
+
+  // Scroll to start when window is reopened
+  useEffect(() => {
+    if (resetScrollKey === undefined || resetScrollKey === 0) return;
+    if (containerRef.current) {
+      containerRef.current.scrollLeft = 0;
+    }
+  }, [resetScrollKey]);
 
   // Native onScroll handler for infinite scroll
   const handleScroll = () => {

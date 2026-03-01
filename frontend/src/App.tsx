@@ -53,6 +53,11 @@ function App() {
   });
 
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const isDeletingRef = useRef(false);
+  const clipsRef = useRef(clips);
+  clipsRef.current = clips;
+  const [windowFocusCount, setWindowFocusCount] = useState(0);
+  const autoSelectFirstOnNextLoadRef = useRef(false);
 
   const effectiveTheme = useTheme(theme);
 
@@ -85,6 +90,27 @@ function App() {
       searchInputRef.current?.focus();
     }, 100);
   }, []);
+
+  // Reset selection, clear search, and scroll to top every time the window is shown/focused
+  useEffect(() => {
+    const unlisten = appWindow.listen('tauri://focus', () => {
+      setSelectedClipId(null);
+      setSearchQuery('');
+      autoSelectFirstOnNextLoadRef.current = true;
+      setWindowFocusCount((c) => c + 1);
+    });
+    return () => {
+      unlisten.then((f) => f());
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Focus search input AFTER React has rendered the cleared state (avoids stale DOM value)
+  useEffect(() => {
+    if (windowFocusCount > 0) {
+      searchInputRef.current?.focus();
+    }
+  }, [windowFocusCount]);
 
   const openSettings = useCallback(async () => {
     // Check if settings window already exists
@@ -150,6 +176,10 @@ function App() {
           });
         } else {
           setClips(data);
+          if (autoSelectFirstOnNextLoadRef.current) {
+            autoSelectFirstOnNextLoadRef.current = false;
+            setSelectedClipId(data[0]?.id ?? null);
+          }
         }
 
         // If we got fewer than limit, no more clips
@@ -321,15 +351,22 @@ function App() {
 
   useKeyboard({
     onClose: () => appWindow.hide(),
-    onSearch: () => setShowSearch(true),
+    onSearch: () => {
+      setShowSearch(true);
+      setTimeout(() => {
+        searchInputRef.current?.focus();
+      }, 50);
+    },
     onDelete: () => handleDelete(selectedClipId),
     onNavigateUp: () => {
+      if (isLoading) return;
       const currentIndex = clips.findIndex((c) => c.id === selectedClipId);
       if (currentIndex > 0) {
         setSelectedClipId(clips[currentIndex - 1].id);
       }
     },
     onNavigateDown: () => {
+      if (isLoading) return;
       const currentIndex = clips.findIndex((c) => c.id === selectedClipId);
       if (currentIndex === -1 && clips.length > 0) {
         setSelectedClipId(clips[0].id);
@@ -346,9 +383,11 @@ function App() {
 
   const handleDelete = async (clipId: string | null) => {
     if (!clipId) return;
+    if (isDeletingRef.current) return;
+    isDeletingRef.current = true;
     try {
       await invoke('delete_clip', { id: clipId, hardDelete: false });
-      setClips(clips.filter((c) => c.id !== clipId));
+      setClips((prev) => prev.filter((c) => c.id !== clipId));
       setSelectedClipId(null);
       // Refresh counts
       loadFolders();
@@ -357,6 +396,8 @@ function App() {
     } catch (error) {
       console.error('Failed to delete clip:', error);
       toast.error('Failed to delete clip');
+    } finally {
+      isDeletingRef.current = false;
     }
   };
 
@@ -521,6 +562,15 @@ function App() {
     }
   };
 
+  const handleReorderFolders = async (folderIds: string[]) => {
+    try {
+      await invoke('reorder_folders', { folderIds });
+      await loadFolders();
+    } catch (error) {
+      console.error('Failed to reorder folders:', error);
+    }
+  };
+
   const handleDeleteFolder = async (folderId: string) => {
     if (!folderId) return;
     try {
@@ -637,6 +687,7 @@ function App() {
             onFolderContextMenu={(e, folderId) => {
               if (folderId) handleContextMenu(e, 'folder', folderId);
             }}
+            onReorderFolders={handleReorderFolders}
             theme={effectiveTheme}
           />
 
@@ -651,6 +702,7 @@ function App() {
               onCopy={handleCopy}
               onDelete={handleDelete}
               onLoadMore={loadMore}
+              resetScrollKey={windowFocusCount}
               // Simulated Drag Props
               onDragStart={startDrag}
               onCardContextMenu={(e, clipId) => handleContextMenu(e, 'card', clipId)}

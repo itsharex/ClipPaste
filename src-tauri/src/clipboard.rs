@@ -205,6 +205,7 @@ async fn process_clipboard_change(app: AppHandle, db: Arc<Database>) {
         .unwrap_or(None);
 
     if let Some(existing_id) = existing_uuid {
+        // Bump created_at so re-copied clip moves back to top of the list
         let _ = sqlx::query(r#"UPDATE clips SET created_at = CURRENT_TIMESTAMP, is_deleted = 0 WHERE uuid = ?"#)
             .bind(&existing_id)
             .execute(pool)

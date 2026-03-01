@@ -3,7 +3,7 @@
     windows_subsystem = "windows"
 )]
 
-use clipboard::run_app;
+use clippaste::run_app;
 
 fn main() {
     run_app();

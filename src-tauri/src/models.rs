@@ -17,6 +17,7 @@ pub struct Clip {
     pub metadata: Option<String>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub last_accessed: chrono::DateTime<chrono::Utc>,
+    pub last_pasted_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]

@@ -350,7 +350,8 @@ pub fn run_app() {
             commands::focus_window,
             commands::get_data_directory,
             commands::set_data_directory,
-            commands::pick_folder
+            commands::pick_folder,
+            commands::reorder_folders
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -374,15 +375,13 @@ pub fn animate_window_show(window: &tauri::WebviewWindow) {
 
         if let Some(monitor) = monitor {
             let scale_factor = monitor.scale_factor();
-
-            let _screen_size = monitor.size();
-            let _monitor_pos = monitor.position();
-
-            log::debug!("Monitor size: {:?}, Monitor position: {:?}, Scale factor: {:?}", _screen_size, _monitor_pos, scale_factor);
-
             let work_area = monitor.work_area();
             let window_height_px = (constants::WINDOW_HEIGHT * scale_factor) as u32;
             let window_margin_px = (constants::WINDOW_MARGIN * scale_factor) as i32;
+
+            log::debug!("Show: work_area pos=({},{}) size={}x{}, scale={}",
+                work_area.position.x, work_area.position.y,
+                work_area.size.width, work_area.size.height, scale_factor);
 
             let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize {
                 width: work_area.size.width - (window_margin_px as u32 * 2),
@@ -390,39 +389,57 @@ pub fn animate_window_show(window: &tauri::WebviewWindow) {
             }));
 
             let target_y = work_area.position.y + (work_area.size.height as i32) - (window_height_px as i32) - window_margin_px;
-            let start_y = work_area.position.y + (work_area.size.height as i32); // Just off screen
 
-            // Initial setup
-            let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
-                x: work_area.position.x + window_margin_px,
-                y: start_y,
-            }));
+            // Check if there's a monitor below. If so, skip slide-up animation
+            // to prevent the window from briefly appearing on the lower monitor.
+            #[cfg(target_os = "windows")]
+            let skip_animation = has_adjacent_monitor_below(
+                work_area.position.x,
+                work_area.position.y + work_area.size.height as i32,
+                work_area.size.width,
+            );
+            #[cfg(not(target_os = "windows"))]
+            let skip_animation = false;
 
-            // Ensure window is fully opaque (if any previous transparency was applied)
-            // No set_opacity here to avoid feature dependency for now.
-
-            let _ = window.show();
-            let _ = window.set_focus();
-
-            // Animation loop
-            let steps = 15;
-            let duration = std::time::Duration::from_millis(10);
-            let dy = (target_y - start_y) as f64 / steps as f64;
-
-            for i in 1..=steps {
-                let current_y = start_y as f64 + dy * i as f64;
+            if skip_animation {
+                // Position directly at target — no slide animation
                 let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
                     x: work_area.position.x + window_margin_px,
-                    y: current_y as i32,
+                    y: target_y,
                 }));
-                std::thread::sleep(duration);
-            }
+                let _ = window.show();
+                let _ = window.set_focus();
+            } else {
+                // Normal slide-up animation from bottom edge
+                let start_y = work_area.position.y + (work_area.size.height as i32);
 
-            // Ensure final position is exact
-            let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
-                x: work_area.position.x + window_margin_px,
-                y: target_y,
-            }));
+                let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
+                    x: work_area.position.x + window_margin_px,
+                    y: start_y,
+                }));
+
+                let _ = window.show();
+                let _ = window.set_focus();
+
+                let steps = 15;
+                let duration = std::time::Duration::from_millis(10);
+                let dy = (target_y - start_y) as f64 / steps as f64;
+
+                for i in 1..=steps {
+                    let current_y = start_y as f64 + dy * i as f64;
+                    let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
+                        x: work_area.position.x + window_margin_px,
+                        y: current_y as i32,
+                    }));
+                    std::thread::sleep(duration);
+                }
+
+                // Ensure final position is exact
+                let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
+                    x: work_area.position.x + window_margin_px,
+                    y: target_y,
+                }));
+            }
         }
         IS_ANIMATING.store(false, Ordering::SeqCst);
     });
@@ -444,81 +461,91 @@ pub fn animate_window_hide(window: &tauri::WebviewWindow, on_done: Option<Box<dy
             let window_margin_px = (constants::WINDOW_MARGIN * scale_factor) as i32;
 
             let start_y = work_area.position.y + (work_area.size.height as i32) - (window_height_px as i32) - window_margin_px;
-            let target_y = work_area.position.y + (work_area.size.height as i32); // Off screen (starts at bottom of work area)
+            let target_y = work_area.position.y + (work_area.size.height as i32); // Off screen
 
-            // Fix Z-Order: Dynamic Switch & Fade Out
+            // Check if there's a monitor below — if so, skip slide animation
             #[cfg(target_os = "windows")]
-            {
-                use windows::Win32::UI::WindowsAndMessaging::{SetWindowPos, FindWindowW, GetWindowRect, SWP_NOMOVE, SWP_NOSIZE, SWP_NOACTIVATE};
-                use windows::Win32::Foundation::{HWND, RECT};
-                use windows::core::PCWSTR;
+            let skip_animation = has_adjacent_monitor_below(
+                work_area.position.x,
+                work_area.position.y + work_area.size.height as i32,
+                work_area.size.width,
+            );
+            #[cfg(not(target_os = "windows"))]
+            let skip_animation = false;
 
-                // 1. Find the Taskbar
-                let class_name: Vec<u16> = "Shell_TrayWnd".encode_utf16().chain(std::iter::once(0)).collect();
-                let taskbar_hwnd = unsafe { FindWindowW(PCWSTR(class_name.as_ptr()), PCWSTR::null()) }.unwrap_or(HWND(std::ptr::null_mut()));
+            if !skip_animation {
+                // Fix Z-Order: Dynamic Switch & Fade Out
+                #[cfg(target_os = "windows")]
+                {
+                    use windows::Win32::UI::WindowsAndMessaging::{SetWindowPos, FindWindowW, GetWindowRect, SWP_NOMOVE, SWP_NOSIZE, SWP_NOACTIVATE};
+                    use windows::Win32::Foundation::{HWND, RECT};
+                    use windows::core::PCWSTR;
 
-                // 2. Get Taskbar Position (Top Y)
-                let mut taskbar_top_y = 0;
-                if !taskbar_hwnd.0.is_null() {
-                    let mut rect = RECT::default();
-                    if unsafe { GetWindowRect(taskbar_hwnd, &mut rect).is_ok() } {
-                        taskbar_top_y = rect.top;
-                    }
-                }
+                    // 1. Find the Taskbar
+                    let class_name: Vec<u16> = "Shell_TrayWnd".encode_utf16().chain(std::iter::once(0)).collect();
+                    let taskbar_hwnd = unsafe { FindWindowW(PCWSTR(class_name.as_ptr()), PCWSTR::null()) }.unwrap_or(HWND(std::ptr::null_mut()));
 
-                // 3. Initially Ensure Topmost
-                if let Ok(handle) = window.hwnd() {
-                     let hwnd = HWND(handle.0 as _);
-                     let hwnd_topmost = HWND(-1 as _); // HWND_TOPMOST
-                     unsafe {
-                        let _ = SetWindowPos(hwnd, Some(hwnd_topmost), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-                     }
-                }
-
-                let steps = 15;
-                let duration = std::time::Duration::from_millis(10);
-                let dy = (target_y - start_y) as f64 / steps as f64;
-
-                let mut z_order_switched = false;
-
-                for i in 1..=steps {
-                    let current_y = start_y as f64 + dy * i as f64;
-                    let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
-                        x: work_area.position.x + window_margin_px,
-                        y: current_y as i32,
-                    }));
-
-                    // Animation Loop for Hide (Slide only for now)
-
-                    // Dynamic Z-Order Switch: When we hit the taskbar, drop BEHIND it
-                    if !z_order_switched && taskbar_top_y > 0 && current_y as i32 >= taskbar_top_y {
-                         if let Ok(handle) = window.hwnd() {
-                             let hwnd = HWND(handle.0 as _);
-                             if !taskbar_hwnd.0.is_null() {
-                                 unsafe {
-                                    let _ = SetWindowPos(hwnd, Some(taskbar_hwnd), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-                                 }
-                                 z_order_switched = true;
-                             }
+                    // 2. Get Taskbar Position (Top Y)
+                    let mut taskbar_top_y = 0;
+                    if !taskbar_hwnd.0.is_null() {
+                        let mut rect = RECT::default();
+                        if unsafe { GetWindowRect(taskbar_hwnd, &mut rect).is_ok() } {
+                            taskbar_top_y = rect.top;
                         }
                     }
-                    std::thread::sleep(duration);
+
+                    // 3. Initially Ensure Topmost
+                    if let Ok(handle) = window.hwnd() {
+                         let hwnd = HWND(handle.0 as _);
+                         let hwnd_topmost = HWND(-1 as _); // HWND_TOPMOST
+                         unsafe {
+                            let _ = SetWindowPos(hwnd, Some(hwnd_topmost), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+                         }
+                    }
+
+                    let steps = 15;
+                    let duration = std::time::Duration::from_millis(10);
+                    let dy = (target_y - start_y) as f64 / steps as f64;
+
+                    let mut z_order_switched = false;
+
+                    for i in 1..=steps {
+                        let current_y = start_y as f64 + dy * i as f64;
+                        let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
+                            x: work_area.position.x + window_margin_px,
+                            y: current_y as i32,
+                        }));
+
+                        // Dynamic Z-Order Switch: When we hit the taskbar, drop BEHIND it
+                        if !z_order_switched && taskbar_top_y > 0 && current_y as i32 >= taskbar_top_y {
+                             if let Ok(handle) = window.hwnd() {
+                                 let hwnd = HWND(handle.0 as _);
+                                 if !taskbar_hwnd.0.is_null() {
+                                     unsafe {
+                                        let _ = SetWindowPos(hwnd, Some(taskbar_hwnd), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+                                     }
+                                     z_order_switched = true;
+                                 }
+                            }
+                        }
+                        std::thread::sleep(duration);
+                    }
                 }
-            }
 
-            #[cfg(not(target_os = "windows"))]
-            {
-                let steps = 15;
-                let duration = std::time::Duration::from_millis(10);
-                let dy = (target_y - start_y) as f64 / steps as f64;
+                #[cfg(not(target_os = "windows"))]
+                {
+                    let steps = 15;
+                    let duration = std::time::Duration::from_millis(10);
+                    let dy = (target_y - start_y) as f64 / steps as f64;
 
-                for i in 1..=steps {
-                    let current_y = start_y as f64 + dy * i as f64;
-                    let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
-                        x: work_area.position.x + window_margin_px,
-                        y: current_y as i32,
-                    }));
-                    std::thread::sleep(duration);
+                    for i in 1..=steps {
+                        let current_y = start_y as f64 + dy * i as f64;
+                        let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
+                            x: work_area.position.x + window_margin_px,
+                            y: current_y as i32,
+                        }));
+                        std::thread::sleep(duration);
+                    }
                 }
             }
 
@@ -563,27 +590,109 @@ fn get_data_dir() -> std::path::PathBuf {
     }
 }
 
+/// Check if there is a monitor adjacent below the given bottom edge.
+/// Used to decide whether slide-up animation is safe (won't leak onto another monitor).
+#[cfg(target_os = "windows")]
+fn has_adjacent_monitor_below(work_area_x: i32, work_area_bottom: i32, work_area_width: u32) -> bool {
+    use windows::Win32::Foundation::POINT;
+    use windows::Win32::Graphics::Gdi::{MonitorFromPoint, MONITOR_DEFAULTTONULL};
+
+    // Sample a few points along the bottom edge to check for a monitor below
+    let check_points = [
+        work_area_x + work_area_width as i32 / 2,  // center
+        work_area_x + 10,                            // left side
+        work_area_x + work_area_width as i32 - 10,  // right side
+    ];
+
+    for x in check_points {
+        let point = POINT { x, y: work_area_bottom + 1 };
+        let hmon = unsafe { MonitorFromPoint(point, MONITOR_DEFAULTTONULL) };
+        if !hmon.is_invalid() {
+            return true;
+        }
+    }
+    false
+}
+
+/// Monitor info obtained directly from Win32 APIs, avoiding coordinate system
+/// mismatches between GetCursorPos (virtual screen coords) and Tauri's Monitor
+/// (physical coords) that cause wrong monitor detection on multi-monitor setups
+/// with different DPI scales.
+#[cfg(target_os = "windows")]
+pub struct CursorMonitorInfo {
+    pub work_area_x: i32,
+    pub work_area_y: i32,
+    pub work_area_width: u32,
+    pub work_area_height: u32,
+    pub monitor_x: i32,
+    pub monitor_y: i32,
+    pub scale_factor: f64,
+}
+
+#[cfg(target_os = "windows")]
+pub fn get_cursor_monitor_info() -> Option<CursorMonitorInfo> {
+    use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
+    use windows::Win32::Foundation::POINT;
+    use windows::Win32::Graphics::Gdi::{MonitorFromPoint, GetMonitorInfoW, MONITORINFO, MONITOR_DEFAULTTONEAREST};
+    use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
+
+    let mut point = POINT { x: 0, y: 0 };
+    unsafe { GetCursorPos(&mut point).ok()? };
+
+    let hmonitor = unsafe { MonitorFromPoint(point, MONITOR_DEFAULTTONEAREST) };
+
+    let mut mi = MONITORINFO {
+        cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+        ..Default::default()
+    };
+
+    if !unsafe { GetMonitorInfoW(hmonitor, &mut mi).as_bool() } {
+        return None;
+    }
+
+    let work = mi.rcWork;
+    let mon = mi.rcMonitor;
+
+    let mut dpi_x: u32 = 96;
+    let mut dpi_y: u32 = 96;
+    let _ = unsafe { GetDpiForMonitor(hmonitor, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y) };
+
+    Some(CursorMonitorInfo {
+        work_area_x: work.left,
+        work_area_y: work.top,
+        work_area_width: (work.right - work.left) as u32,
+        work_area_height: (work.bottom - work.top) as u32,
+        monitor_x: mon.left,
+        monitor_y: mon.top,
+        scale_factor: dpi_x as f64 / 96.0,
+    })
+}
+
 pub fn get_monitor_at_cursor(window: &tauri::WebviewWindow) -> Option<tauri::Monitor> {
     #[cfg(target_os = "windows")]
     {
-        use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
-        use windows::Win32::Foundation::POINT;
-        let mut point = POINT { x: 0, y: 0 };
-        let mut found = None;
-        if unsafe { GetCursorPos(&mut point).is_ok() } {
+        // Use MonitorFromPoint via get_cursor_monitor_info to find the correct monitor,
+        // then match against Tauri monitors by closest position.
+        if let Some(info) = get_cursor_monitor_info() {
             if let Ok(monitors) = window.available_monitors() {
+                let mut best: Option<tauri::Monitor> = None;
+                let mut best_dist = i64::MAX;
                 for m in monitors {
                     let pos = m.position();
-                    let size = m.size();
-                    if point.x >= pos.x && point.x < pos.x + size.width as i32 &&
-                       point.y >= pos.y && point.y < pos.y + size.height as i32 {
-                        found = Some(m);
-                        break;
+                    let dx = (pos.x - info.monitor_x) as i64;
+                    let dy = (pos.y - info.monitor_y) as i64;
+                    let dist = dx * dx + dy * dy;
+                    if dist < best_dist {
+                        best_dist = dist;
+                        best = Some(m);
                     }
+                }
+                if best.is_some() {
+                    return best;
                 }
             }
         }
-        found.or_else(|| window.current_monitor().ok().flatten())
+        window.current_monitor().ok().flatten()
     }
     #[cfg(not(target_os = "windows"))]
     {
