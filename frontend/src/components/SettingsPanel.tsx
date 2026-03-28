@@ -274,6 +274,8 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
     setIsRecordingMode(false);
   };
 
+  const [updateProgress, setUpdateProgress] = useState<{ percent: number; downloaded: number; total: number } | null>(null);
+
   const handleCheckUpdate = async () => {
     try {
       const loadingToast = toast.loading('Checking for updates...');
@@ -287,12 +289,28 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
             label: 'Download & Restart',
             onClick: async () => {
               try {
-                const dlToast = toast.loading(`Downloading v${update.version}...`);
-                await update.downloadAndInstall();
-                toast.dismiss(dlToast);
+                setUpdateProgress({ percent: 0, downloaded: 0, total: 0 });
+                let totalBytes = 0;
+                let downloadedBytes = 0;
+
+                await update.downloadAndInstall((event) => {
+                  if (event.event === 'Started' && event.data.contentLength) {
+                    totalBytes = event.data.contentLength;
+                    setUpdateProgress({ percent: 0, downloaded: 0, total: totalBytes });
+                  } else if (event.event === 'Progress') {
+                    downloadedBytes += event.data.chunkLength;
+                    const percent = totalBytes > 0 ? Math.round((downloadedBytes / totalBytes) * 100) : 0;
+                    setUpdateProgress({ percent, downloaded: downloadedBytes, total: totalBytes });
+                  } else if (event.event === 'Finished') {
+                    setUpdateProgress({ percent: 100, downloaded: totalBytes, total: totalBytes });
+                  }
+                });
+
+                setUpdateProgress(null);
                 toast.success('Update installed. Restarting...');
                 await relaunch();
               } catch (e) {
+                setUpdateProgress(null);
                 toast.error(`Update failed: ${e}`);
               }
             },
@@ -759,10 +777,26 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
           <div className="flex gap-2 text-xs text-muted-foreground">
             <span>© 2025</span>
             <span>•</span>
-            <button onClick={handleCheckUpdate} className="underline hover:text-foreground">
-              Check for Updates
+            <button onClick={handleCheckUpdate} className="underline hover:text-foreground" disabled={!!updateProgress}>
+              {updateProgress ? 'Updating...' : 'Check for Updates'}
             </button>
           </div>
+          {updateProgress && (
+            <div className="mt-2 w-full max-w-[280px]">
+              <div className="mb-1 flex justify-between text-[10px] text-muted-foreground">
+                <span>{updateProgress.percent}%</span>
+                <span>
+                  {(updateProgress.downloaded / 1024 / 1024).toFixed(1)} / {(updateProgress.total / 1024 / 1024).toFixed(1)} MB
+                </span>
+              </div>
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full bg-blue-500 transition-all duration-300"
+                  style={{ width: `${updateProgress.percent}%` }}
+                />
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </>
