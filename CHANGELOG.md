@@ -11,6 +11,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.2.9] - 2026-03-28
+
+### Added
+- **Update progress bar** — shows percentage, downloaded/total MB, and animated progress bar during auto-update download
+
+### Fixed
+- **Footer year** — corrected from 2025 to 2026
+
+---
+
 ## [1.2.8] - 2026-03-28
 
 ### Changed

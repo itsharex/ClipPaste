@@ -1,6 +1,6 @@
 {
   "name": "clippaste",
-  "version": "1.2.8",
+  "version": "1.2.9",
   "description": "A beautiful clipboard history manager for Windows",
   "license": "GPL-3.0",
   "scripts": {

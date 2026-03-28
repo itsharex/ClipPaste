@@ -775,7 +775,7 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
             ClipPaste {appVersion || '...'}
           </button>
           <div className="flex gap-2 text-xs text-muted-foreground">
-            <span>© 2025</span>
+            <span>© 2026</span>
             <span>•</span>
             <button onClick={handleCheckUpdate} className="underline hover:text-foreground" disabled={!!updateProgress}>
               {updateProgress ? 'Updating...' : 'Check for Updates'}
