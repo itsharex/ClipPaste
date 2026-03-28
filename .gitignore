@@ -23,5 +23,9 @@ data/
 # Logs
 *.log
 
+# Tauri signing keys
+.tauri_private_key
+*.key
+
 # Don't know why this file is always created...
 nul

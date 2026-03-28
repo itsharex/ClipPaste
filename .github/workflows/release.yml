@@ -28,7 +28,7 @@ jobs:
 
             ## Installation
 
-            Download the `.msi` or `.exe` installer from the assets below.
+            Download the `.exe` installer from the assets below.
           draft: false
           prerelease: false
 
