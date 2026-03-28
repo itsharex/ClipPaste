@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(taskkill //F //IM \"clippaste.exe\")",
+      "Bash(taskkill //F //IM \"node.exe\")",
+      "Bash(pnpm tauri:*)",
+      "Bash(npx --yes @tauri-apps/cli signer generate -w src-tauri/.tauri_private_key)",
+      "Read(//c/Users/hieut/**)",
+      "Bash(powershell -Command \"& ''C:\\\\Program Files\\\\GitHub CLI\\\\gh.exe'' release delete v1.2.7 --yes --cleanup-tag --repo Phieu-Tran/ClipPaste\")",
+      "Bash(powershell -Command \"& ''C:\\\\Program Files\\\\GitHub CLI\\\\gh.exe'' run list --limit 3 --repo Phieu-Tran/ClipPaste\")",
+      "Bash(powershell -Command \"& ''C:\\\\Program Files\\\\GitHub CLI\\\\gh.exe'' run list --limit 1 --repo Phieu-Tran/ClipPaste\")",
+      "Bash(powershell -Command \"& ''C:\\\\Program Files\\\\GitHub CLI\\\\gh.exe'' release view v1.2.7 --json assets --jq ''.assets[].name'' --repo Phieu-Tran/ClipPaste\")",
+      "Bash(npx @tauri-apps/cli --version)",
+      "Bash(powershell -Command \"& ''C:\\\\Program Files\\\\GitHub CLI\\\\gh.exe'' release edit v1.2.7 --notes-file ''E:\\\\Copy\\\\ClipPaste\\\\release_notes.md'' --repo Phieu-Tran/ClipPaste\")",
+      "Bash(gh api:*)",
+      "Bash(python -m base64 -d)",
+      "Bash(curl -sL https://raw.githubusercontent.com/Phieu-Tran/window-vibrancy/dev/Cargo.toml)",
+      "Bash(curl -sL https://raw.githubusercontent.com/Phieu-Tran/window-vibrancy/dev/src/lib.rs)",
+      "Bash(curl -sL https://raw.githubusercontent.com/Phieu-Tran/window-vibrancy/dev/src/windows.rs)",
+      "Read(//e/Copy/window-vibrancy/src/**)",
+      "Bash(cargo update:*)"
+    ],
+    "additionalDirectories": [
+      "e:\\Copy\\ClipPaste\\.gemini",
+      "e:\\Copy\\window-vibrancy\\src"
+    ]
+  }
+}
