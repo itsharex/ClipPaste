@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.3.4] - 2026-03-29
+
+### Added
+- **Smooth scroll with momentum** — clip list now scrolls with inertia and friction, buttery smooth horizontal scrolling using requestAnimationFrame (zero extra dependencies)
+
+---
+
 ## [1.3.3] - 2026-03-29
 
 ### Fixed
