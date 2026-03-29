@@ -11,6 +11,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.3.6] - 2026-03-29
+
+### Performance
+- **Memoized gradient colors** — card header colors cached, no recalculation per render
+- **Memoized folder colors** — only recomputed on theme change
+- **Debounced folder refresh** — rapid copies only trigger 1 DB call instead of N
+- **Smarter preview cache** — only clears when clips are added/removed, not on count changes
+
+---
+
 ## [1.3.5] - 2026-03-29
 
 ### Fixed
