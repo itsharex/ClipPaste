@@ -1,4 +1,4 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useCallback } from 'react';
 import { ClipboardItem } from '../types';
 import { ClipCard } from './ClipCard';
 
@@ -67,13 +67,45 @@ export function ClipList({
     }
   };
 
-  // Map vertical mouse wheel to horizontal scroll for better UX
-  const handleWheel = (e: React.WheelEvent) => {
-    if (containerRef.current && e.deltaY !== 0) {
-      // Multiply by 2 for faster scrolling as requested
-      containerRef.current.scrollLeft += e.deltaY * 1;
+  // Smooth horizontal scroll with momentum
+  const scrollVelocityRef = useRef(0);
+  const scrollAnimRef = useRef<number | null>(null);
+
+  const animateScroll = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    container.scrollLeft += scrollVelocityRef.current;
+    scrollVelocityRef.current *= 0.92; // friction — decay factor
+
+    if (Math.abs(scrollVelocityRef.current) > 0.5) {
+      scrollAnimRef.current = requestAnimationFrame(animateScroll);
+    } else {
+      scrollVelocityRef.current = 0;
+      scrollAnimRef.current = null;
     }
-  };
+  }, []);
+
+  // Register native wheel listener (non-passive) so preventDefault works
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const delta = e.deltaY !== 0 ? e.deltaY : e.deltaX;
+      scrollVelocityRef.current += delta * 0.8;
+      if (!scrollAnimRef.current) {
+        scrollAnimRef.current = requestAnimationFrame(animateScroll);
+      }
+    };
+
+    container.addEventListener('wheel', onWheel, { passive: false });
+    return () => {
+      container.removeEventListener('wheel', onWheel);
+      if (scrollAnimRef.current) cancelAnimationFrame(scrollAnimRef.current);
+    };
+  }, [animateScroll]);
 
   if (isLoading && clips.length === 0) {
     return (
@@ -102,7 +134,6 @@ export function ClipList({
       ref={containerRef}
       className={`no-scrollbar flex h-full w-full flex-1 items-center gap-4 overflow-x-auto overflow-y-hidden px-4${isPreviewing ? ' opacity-80' : ''}`}
       onScroll={handleScroll}
-      onWheel={handleWheel}
       style={{
         // Smooth scrolling disabled per user request
         scrollBehavior: 'auto',
