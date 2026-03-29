@@ -11,6 +11,7 @@ interface ClipCardProps {
   onPaste: () => void;
   onCopy: () => void;
   onPin: () => void;
+  showPin?: boolean;
   onDragStart: (clipId: string, startX: number, startY: number) => void;
   onContextMenu?: (e: React.MouseEvent) => void;
 }
@@ -22,6 +23,7 @@ export const ClipCard = memo(function ClipCard({
   onPaste,
   onCopy,
   onPin,
+  showPin,
   onDragStart,
   onContextMenu,
 }: ClipCardProps) {
@@ -122,21 +124,23 @@ export const ClipCard = memo(function ClipCard({
           <span className="flex-1 truncate text-[11px] font-bold uppercase tracking-wider text-foreground shadow-sm">
             {title}
           </span>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onPin();
-            }}
-            className={clsx(
-              'rounded-md p-1 transition-opacity duration-150 hover:bg-black/10',
-              clip.is_pinned ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-            )}
-            title={clip.is_pinned ? 'Unpin' : 'Pin'}
-          >
-            <Pin size={14} className={clsx(
-              clip.is_pinned ? 'text-amber-400 fill-amber-400' : 'text-foreground/70 hover:text-foreground'
-            )} />
-          </button>
+          {showPin && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onPin();
+              }}
+              className={clsx(
+                'rounded-md p-1 transition-opacity duration-150 hover:bg-black/10',
+                clip.is_pinned ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+              )}
+              title={clip.is_pinned ? 'Unpin' : 'Pin'}
+            >
+              <Pin size={14} className={clsx(
+                clip.is_pinned ? 'text-amber-400 fill-amber-400' : 'text-foreground/70 hover:text-foreground'
+              )} />
+            </button>
+          )}
           <button
             onClick={(e) => {
               e.stopPropagation();

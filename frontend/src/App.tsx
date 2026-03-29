@@ -387,7 +387,7 @@ function App() {
       }
     },
     onPin: () => {
-      if (selectedClipId && !editingClip) {
+      if (selectedClipId && !editingClip && selectedFolder) {
         handleTogglePin(selectedClipId);
       }
     },
@@ -723,10 +723,10 @@ function App() {
               options={
                 contextMenu.type === 'card'
                   ? [
-                      {
+                      ...(selectedFolder ? [{
                         label: clips.find((c) => c.id === contextMenu.itemId)?.is_pinned ? 'Unpin' : 'Pin',
                         onClick: () => handleTogglePin(contextMenu.itemId),
-                      },
+                      }] : []),
                       ...(clips.find((c) => c.id === contextMenu.itemId)?.clip_type !== 'image'
                         ? [{ label: 'Chỉnh sửa trước khi paste', onClick: () => handleEditBeforePaste(contextMenu.itemId) }]
                         : []),
@@ -832,6 +832,7 @@ function App() {
               onPaste={handlePaste}
               onCopy={handleCopy}
               onPin={handleTogglePin}
+              showPin={!!(isPreviewing ? previewFolder : selectedFolder)}
               onLoadMore={isPreviewing ? () => {} : loadMore}
               resetScrollKey={isPreviewing ? undefined : windowFocusCount}
               // Simulated Drag Props

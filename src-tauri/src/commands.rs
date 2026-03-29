@@ -42,7 +42,7 @@ pub async fn get_clips(filter_id: Option<String>, limit: i64, offset: i64, previ
             log::info!("Querying for items, offset: {}, limit: {}", offset, limit);
             sqlx::query_as(r#"
                 SELECT * FROM clips WHERE is_deleted = 0
-                ORDER BY is_pinned DESC, created_at DESC LIMIT ? OFFSET ?
+                ORDER BY created_at DESC LIMIT ? OFFSET ?
             "#)
             .bind(limit)
             .bind(offset)
@@ -444,7 +444,7 @@ pub async fn search_clips(query: String, filter_id: Option<String>, limit: i64, 
         None => {
             sqlx::query_as(r#"
                 SELECT * FROM clips WHERE is_deleted = 0 AND (text_preview LIKE ? OR content LIKE ?)
-                ORDER BY is_pinned DESC, created_at DESC LIMIT ? OFFSET ?
+                ORDER BY created_at DESC LIMIT ? OFFSET ?
             "#)
             .bind(&search_pattern)
             .bind(&search_pattern)

@@ -11,6 +11,7 @@ interface ClipListProps {
   onPaste: (clipId: string) => void;
   onCopy: (clipId: string) => void;
   onPin: (clipId: string) => void;
+  showPin?: boolean;
   onLoadMore: () => void;
   resetScrollKey?: number;
   onDragStart: (clipId: string, startX: number, startY: number) => void;
@@ -27,6 +28,7 @@ export function ClipList({
   onPaste,
   onCopy,
   onPin,
+  showPin,
   onLoadMore,
   resetScrollKey,
   onDragStart,
@@ -115,6 +117,7 @@ export function ClipList({
           onPaste={() => onPaste(clip.id)}
           onCopy={() => onCopy(clip.id)}
           onPin={() => onPin(clip.id)}
+          showPin={showPin}
           onDragStart={onDragStart}
           onContextMenu={(e: React.MouseEvent) => onCardContextMenu?.(e, clip.id)}
         />
