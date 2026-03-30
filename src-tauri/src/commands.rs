@@ -840,9 +840,35 @@ pub async fn pick_file() -> Result<String, String> {
             Err("Failed to open file picker".to_string())
         }
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "macos")]
     {
-        Err("Not supported on this OS".to_string())
+        use std::process::Command;
+        let output = Command::new("osascript")
+            .args(["-e", "POSIX path of (choose file)"])
+            .output()
+            .map_err(|e| e.to_string())?;
+        if output.status.success() {
+            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if path.is_empty() { return Err("No file selected".to_string()); }
+            Ok(path)
+        } else {
+            Err("No file selected".to_string())
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        use std::process::Command;
+        let output = Command::new("zenity")
+            .args(["--file-selection"])
+            .output()
+            .map_err(|e| e.to_string())?;
+        if output.status.success() {
+            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if path.is_empty() { return Err("No file selected".to_string()); }
+            Ok(path)
+        } else {
+            Err("No file selected".to_string())
+        }
     }
 }
 
@@ -894,9 +920,37 @@ pub async fn pick_folder(app: AppHandle) -> Result<String, String> {
             result
         }
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "macos")]
     {
-        Err("Not supported on this OS".to_string())
+        let _ = app;
+        use std::process::Command;
+        let output = Command::new("osascript")
+            .args(["-e", "POSIX path of (choose folder)"])
+            .output()
+            .map_err(|e| e.to_string())?;
+        if output.status.success() {
+            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if path.is_empty() { return Err("No folder selected".to_string()); }
+            Ok(path)
+        } else {
+            Err("No folder selected".to_string())
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let _ = app;
+        use std::process::Command;
+        let output = Command::new("zenity")
+            .args(["--file-selection", "--directory"])
+            .output()
+            .map_err(|e| e.to_string())?;
+        if output.status.success() {
+            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if path.is_empty() { return Err("No folder selected".to_string()); }
+            Ok(path)
+        } else {
+            Err("No folder selected".to_string())
+        }
     }
 }
 

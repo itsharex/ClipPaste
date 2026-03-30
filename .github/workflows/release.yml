@@ -28,7 +28,13 @@ jobs:
 
           ## Installation
 
-          Download the \`.exe\` installer from the assets below." \
+          | Platform | Download |
+          |----------|----------|
+          | **Windows (x64)** | \`.exe\` installer |
+          | **Windows (ARM64)** | \`.exe\` installer |
+          | **macOS (Apple Silicon)** | \`.dmg\` |
+          | **macOS (Intel)** | \`.dmg\` |
+          | **Linux (x64)** | \`.deb\` / \`.AppImage\` |" \
             --latest
           RELEASE_ID=$(gh api repos/${{ github.repository }}/releases/tags/${{ github.ref_name }} --jq '.id')
           echo "result=$RELEASE_ID" >> $GITHUB_OUTPUT
@@ -45,12 +51,29 @@ jobs:
             target: 'x86_64-pc-windows-msvc'
           - platform: 'windows-latest'
             target: 'aarch64-pc-windows-msvc'
+          - platform: 'macos-latest'
+            target: 'aarch64-apple-darwin'
+          - platform: 'macos-latest'
+            target: 'x86_64-apple-darwin'
+          - platform: 'ubuntu-22.04'
+            target: 'x86_64-unknown-linux-gnu'
 
     runs-on: ${{ matrix.platform }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4

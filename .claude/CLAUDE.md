@@ -2,7 +2,20 @@
 
 ## Project Overview
 
-**ClipPaste** is a clipboard history manager for Windows, built with **Tauri v2** (Rust backend) + **React/TypeScript** (frontend). Package name: `clippaste`, version: `1.1.9`.
+**ClipPaste** is a cross-platform clipboard history manager for **Windows, macOS, and Linux**, built with **Tauri v2** (Rust backend) + **React/TypeScript** (frontend). Package name: `clippaste`, version: `1.4.0`.
+
+### Platform Support
+
+| Feature | Windows | macOS | Linux |
+|---------|---------|-------|-------|
+| Clipboard monitoring | ✅ | ✅ | ✅ |
+| Auto-paste (Shift+Insert) | ✅ | ❌ | ❌ |
+| Source app detection | ✅ (Win32 API) | ❌ | ❌ |
+| Source app icon | ✅ (Win32 API) | ❌ | ❌ |
+| Window effects | Mica/Mica Alt/Clear | Vibrancy | ❌ |
+| File/folder picker | PowerShell | osascript | zenity |
+
+Windows-specific code (`windows` crate, Win32 API) is gated behind `#[cfg(target_os = "windows")]`. Non-Windows platforms get graceful fallbacks (no source app info, no auto-paste).
 
 ## Tech Stack
 

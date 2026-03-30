@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="64 50 384 430" width="384" height="430">
   <defs>
     <linearGradient id="boardGrad" x1="0" y1="0" x2="0.3" y2="1">
       <stop offset="0%" stop-color="#5BC0F8"/>
@@ -33,11 +33,10 @@
     </radialGradient>
   </defs>
 
-  <!-- Clipboard body -->
+  <!-- Clipboard body (no shadow filter) -->
   <rect x="98" y="90" width="316" height="370" rx="28" ry="28" fill="url(#boardGrad)"/>
   <path d="M386 118 Q414 90 414 118 L414 432 Q414 460 386 460 L126 460 Q98 460 98 432 L98 432 Q98 465 131 465 L381 465 Q419 465 419 427 L419 123 Q419 90 386 118 Z" fill="url(#sideGrad)" opacity="0.5"/>
   <rect x="98" y="90" width="316" height="370" rx="28" ry="28" fill="url(#shine)"/>
-  <rect x="98" y="90" width="316" height="370" rx="28" ry="28" fill="none" stroke="#2980B9" stroke-width="1.5" opacity="0.3"/>
 
   <!-- Metal clip -->
   <rect x="188" y="62" width="136" height="56" rx="12" ry="12" fill="url(#clipGrad)"/>
@@ -47,13 +46,11 @@
   <!-- Paper -->
   <g transform="translate(10, -5) rotate(-3, 310, 300)">
     <rect x="140" y="150" width="232" height="170" rx="8" ry="8" fill="url(#paperGrad)"/>
-    <rect x="140" y="150" width="232" height="170" rx="8" ry="8" fill="none" stroke="#CFD8DC" stroke-width="1"/>
     <rect x="162" y="178" width="140" height="8" rx="4" fill="#B0BEC5"/>
     <rect x="162" y="198" width="110" height="8" rx="4" fill="#CFD8DC"/>
     <rect x="162" y="218" width="160" height="8" rx="4" fill="#B0BEC5"/>
     <rect x="162" y="238" width="90" height="8" rx="4" fill="#CFD8DC"/>
     <rect x="162" y="258" width="130" height="8" rx="4" fill="#B0BEC5"/>
-    <rect x="162" y="278" width="70" height="8" rx="4" fill="#CFD8DC"/>
   </g>
 
   <!-- Paste arrow -->
@@ -64,18 +61,9 @@
   <!-- Face -->
   <ellipse cx="208" cy="388" rx="16" ry="18" fill="#1A3A4A"/>
   <ellipse cx="214" cy="381" rx="6" ry="7" fill="#FFFFFF"/>
-  <ellipse cx="205" cy="393" rx="3" ry="3" fill="#FFFFFF" opacity="0.5"/>
   <ellipse cx="304" cy="388" rx="16" ry="18" fill="#1A3A4A"/>
   <ellipse cx="310" cy="381" rx="6" ry="7" fill="#FFFFFF"/>
-  <ellipse cx="301" cy="393" rx="3" ry="3" fill="#FFFFFF" opacity="0.5"/>
   <path d="M232 415 Q256 440 280 415" fill="none" stroke="#1A3A4A" stroke-width="4" stroke-linecap="round"/>
   <ellipse cx="185" cy="410" rx="18" ry="12" fill="url(#blushL)"/>
   <ellipse cx="327" cy="410" rx="18" ry="12" fill="url(#blushR)"/>
-
-  <!-- Sparkles -->
-  <g fill="#FFD54F" opacity="0.85">
-    <path d="M420 80 L424 92 L436 96 L424 100 L420 112 L416 100 L404 96 L416 92 Z"/>
-    <path d="M70 120 L73 128 L81 131 L73 134 L70 142 L67 134 L59 131 L67 128 Z"/>
-    <path d="M72 380 L75 388 L83 391 L75 394 L72 402 L69 394 L61 391 L69 388 Z"/>
-  </g>
 </svg>

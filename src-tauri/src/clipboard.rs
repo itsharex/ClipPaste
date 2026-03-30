@@ -7,20 +7,32 @@ use crate::database::Database;
 use uuid::Uuid;
 use sha2::{Digest, Sha256};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+
+#[cfg(target_os = "windows")]
 use windows::Win32::Foundation::MAX_PATH;
+#[cfg(target_os = "windows")]
 use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ};
+#[cfg(target_os = "windows")]
 use windows::Win32::System::ProcessStatus::{GetModuleBaseNameW, GetModuleFileNameExW};
+#[cfg(target_os = "windows")]
 use windows::Win32::Storage::FileSystem::{GetFileVersionInfoSizeW, GetFileVersionInfoW, VerQueryValueW};
+#[cfg(target_os = "windows")]
 use windows::Win32::System::DataExchange::GetClipboardOwner;
+#[cfg(target_os = "windows")]
 use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId, DestroyIcon, DrawIconEx, DI_NORMAL, GetIconInfo, ICONINFO};
+#[cfg(target_os = "windows")]
 use windows::Win32::UI::Input::KeyboardAndMouse::{SendInput, INPUT, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, VK_SHIFT, VK_INSERT};
+#[cfg(target_os = "windows")]
 use windows::Win32::UI::Shell::{SHGetFileInfoW, SHGFI_ICON, SHGFI_LARGEICON, SHFILEINFOW, SHGFI_USEFILEATTRIBUTES};
+#[cfg(target_os = "windows")]
 use windows::Win32::Graphics::Gdi::{
     GetObjectW, GetDC, ReleaseDC, CreateCompatibleDC, SelectObject, DeleteDC,
     GetDIBits, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS,
     BITMAP, HBITMAP, CreateCompatibleBitmap, DeleteObject
 };
+#[cfg(target_os = "windows")]
 use std::ffi::OsStr;
+#[cfg(target_os = "windows")]
 use std::os::windows::ffi::OsStrExt;
 use once_cell::sync::Lazy;
 
@@ -263,6 +275,9 @@ fn calculate_hash(content: &[u8]) -> String {
     format!("{:x}", result)
 }
 
+// ========== PLATFORM-SPECIFIC: Source app detection ==========
+
+#[cfg(target_os = "windows")]
 fn get_clipboard_owner_app_info() -> (Option<String>, Option<String>, Option<String>, Option<String>, bool) {
     unsafe {
         let (hwnd, is_explicit) = match GetClipboardOwner() {
@@ -324,6 +339,15 @@ fn get_clipboard_owner_app_info() -> (Option<String>, Option<String>, Option<Str
     }
 }
 
+#[cfg(not(target_os = "windows"))]
+fn get_clipboard_owner_app_info() -> (Option<String>, Option<String>, Option<String>, Option<String>, bool) {
+    // On macOS/Linux, source app detection is not yet implemented
+    (None, None, None, None, false)
+}
+
+// ========== PLATFORM-SPECIFIC: App description (Windows) ==========
+
+#[cfg(target_os = "windows")]
 unsafe fn get_app_description(path: &str) -> Option<String> {
     use std::ffi::c_void;
 
@@ -385,6 +409,9 @@ unsafe fn get_app_description(path: &str) -> Option<String> {
     None
 }
 
+// ========== PLATFORM-SPECIFIC: Icon extraction (Windows) ==========
+
+#[cfg(target_os = "windows")]
 unsafe fn extract_icon(path: &str) -> Option<String> {
     use image::ImageEncoder;
 
@@ -463,8 +490,7 @@ unsafe fn extract_icon(path: &str) -> Option<String> {
     Some(BASE64.encode(&png_data))
 }
 
-
-
+// ========== PLATFORM-SPECIFIC: Paste input simulation ==========
 
 #[cfg(target_os = "windows")]
 pub fn send_paste_input() {
@@ -512,4 +538,10 @@ pub fn send_paste_input() {
 
         SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
     }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn send_paste_input() {
+    // On macOS/Linux, auto-paste is not yet implemented
+    log::warn!("CLIPBOARD: send_paste_input not implemented on this platform");
 }

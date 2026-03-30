@@ -7,7 +7,7 @@
 </h1>
 
 <p align="center">
-    <strong>A beautiful clipboard history manager for Windows</strong>
+    <strong>A beautiful clipboard history manager for Windows, macOS &amp; Linux</strong>
 </p>
 
 <p align="center">
@@ -63,9 +63,27 @@
 
 > **[Download the latest release](https://github.com/Phieu-Tran/ClipPaste/releases/latest)**
 
-Available for **x64** (Intel/AMD) and **ARM64** (Snapdragon).
+| Platform | Architecture | Format |
+|:---------|:-------------|:-------|
+| **Windows** | x64, ARM64 | `.exe` (NSIS installer) |
+| **macOS** | Apple Silicon (M1+), Intel | `.dmg` |
+| **Linux** | x64 | `.deb`, `.AppImage` |
 
-### Security
+### Platform Notes
+
+| Feature | Windows | macOS | Linux |
+|:--------|:-------:|:-----:|:-----:|
+| Clipboard monitoring | ✅ | ✅ | ✅ |
+| Auto-paste | ✅ | ❌ | ❌ |
+| Source app detection | ✅ | ❌ | ❌ |
+| Source app icon | ✅ | ❌ | ❌ |
+| Window effects (Mica) | ✅ | Vibrancy | ❌ |
+| Auto-start | ✅ | ✅ | ✅ |
+| Custom hotkey | ✅ | ✅ | ✅ |
+
+> **macOS / Linux**: Core clipboard history works. Source app detection and auto-paste are Windows-only for now.
+
+### Security (Windows)
 
 Every release is scanned with [VirusTotal](https://www.virustotal.com/) (70+ antivirus engines). Some AI-based engines may flag the installer as a false positive because ClipPaste monitors the clipboard and sends keyboard input — behaviors shared with legitimate clipboard managers.
 
@@ -109,6 +127,11 @@ Every release is scanned with [VirusTotal](https://www.virustotal.com/) (70+ ant
 - [Rust](https://rustup.rs/) 1.70+
 - [pnpm](https://pnpm.io/)
 
+**Linux additional dependencies:**
+```bash
+sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+```
+
 ```bash
 # Install dependencies
 pnpm install
@@ -126,8 +149,8 @@ pnpm tauri build
 
 ClipPaste can exclude specific apps from clipboard history — useful for password managers and banking apps.
 
-- **Settings → Ignored Applications** — browse for `.exe` or type its name
-- Matches by **executable name** (`notepad.exe`) or **full path** (`C:\Windows\System32\notepad.exe`)
+- **Settings → Ignored Applications** — browse for an executable or type its name
+- On Windows: matches by **executable name** (`notepad.exe`) or **full path** (`C:\Windows\System32\notepad.exe`)
 - Case-insensitive matching
 
 ---

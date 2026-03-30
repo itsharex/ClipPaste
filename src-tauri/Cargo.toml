@@ -1,7 +1,7 @@
 [package]
 name = "clippaste"
 version = "1.4.0"
-description = "A beautiful clipboard history manager for Windows"
+description = "A beautiful clipboard history manager"
 authors = ["Phieu-Tran"]
 license = "GPL-3.0"
 edition = "2021"
@@ -26,7 +26,6 @@ parking_lot = "0.12"
 tokio = { version = "1", features = ["full"] }
 once_cell = "1"
 base64 = "0.22.1"
-windows = { version = "0.62.2", features = ["Win32_UI_WindowsAndMessaging", "Win32_Foundation", "Win32_System_Threading", "Win32_System_ProcessStatus", "Win32_Security", "Win32_System_DataExchange", "Win32_UI_Shell", "Win32_Graphics_Gdi", "Win32_Storage_FileSystem", "Win32_System_SystemInformation", "Win32_System_Memory", "Win32_UI_Input_KeyboardAndMouse", "Win32_System_Com", "Win32_UI_HiDpi"] }
 tauri-plugin-autostart = "2"
 tauri-plugin-log = "2.8.0"
 tauri-plugin-updater = "2"
@@ -35,10 +34,11 @@ tauri-plugin-aptabase = "1"
 tauri-plugin-opener = "2"
 log = "0.4.29"
 window-vibrancy = { git = "https://github.com/Phieu-Tran/window-vibrancy.git", branch = "dev" }
-
 dark-light = "2.0.0"
 tauri-plugin-clipboard-x = "2.0.1"
 
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.62.2", features = ["Win32_UI_WindowsAndMessaging", "Win32_Foundation", "Win32_System_Threading", "Win32_System_ProcessStatus", "Win32_Security", "Win32_System_DataExchange", "Win32_UI_Shell", "Win32_Graphics_Gdi", "Win32_Storage_FileSystem", "Win32_System_SystemInformation", "Win32_System_Memory", "Win32_UI_Input_KeyboardAndMouse", "Win32_System_Com", "Win32_UI_HiDpi"] }
 
 [features]
 default = ["custom-protocol"]
