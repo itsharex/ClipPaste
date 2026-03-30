@@ -106,10 +106,10 @@ export const ClipCard = memo(function ClipCard({
         onContextMenu={handleContextMenu}
         className={clsx(
           'relative flex h-full w-full cursor-pointer select-none flex-col overflow-hidden rounded-xl border border-border bg-card shadow-lg',
-          'transition-[transform,box-shadow,ring-color] duration-200 ease-out',
+          'transition-all duration-200 ease-out',
           isSelected
-            ? 'z-10 scale-[1.03] ring-[3px] ring-blue-500/80 shadow-xl shadow-blue-500/10'
-            : 'hover:-translate-y-[2px] hover:shadow-xl hover:ring-2 hover:ring-primary/30',
+            ? 'z-10 scale-[1.04] -translate-y-1 ring-[3px] ring-blue-500/80 shadow-xl shadow-blue-500/20'
+            : 'hover:scale-[1.02] hover:-translate-y-[3px] hover:-rotate-[0.5deg] hover:shadow-xl hover:shadow-primary/10 hover:ring-2 hover:ring-primary/40',
           'group'
         )}
       >

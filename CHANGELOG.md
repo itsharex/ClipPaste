@@ -11,6 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.3.9] - 2026-03-30
+
+### Added
+- **Card hover animation** — subtle scale(1.02), lift(-3px), and tilt(-0.5deg) on hover with primary color glow shadow
+- **Search debounce** — 200ms debounce on search input to prevent flickering during typing
+
+### Changed
+- **Selected card** — enhanced: scale(1.04), lift, stronger blue glow shadow
+- **Hover ring** — brighter primary/40 ring on hover for better visual feedback
+
+---
+
 ## [1.3.8] - 2026-03-30
 
 ### Fixed

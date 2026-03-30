@@ -98,6 +98,7 @@ function App() {
     const unlisten = appWindow.listen('tauri://focus', () => {
       setSelectedClipId(null);
       setSearchQuery('');
+      setSearchInput('');
       setContentTypeFilter(null);
       autoSelectFirstOnNextLoadRef.current = true;
       setWindowFocusCount((c) => c + 1);
@@ -217,8 +218,16 @@ function App() {
   refreshCurrentFolderRef.current = refreshCurrentFolder;
   const debouncedFolderRefreshRef = useRef<() => void>(() => {});
 
+  const [searchInput, setSearchInput] = useState('');
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const handleSearch = useCallback((query: string) => {
-    setSearchQuery(query);
+    setSearchInput(query);
+    // Debounce: wait 200ms after user stops typing
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => {
+      setSearchQuery(query);
+    }, 200);
   }, []);
 
   useEffect(() => {
@@ -841,7 +850,7 @@ function App() {
             selectedFolder={selectedFolder}
             onSelectFolder={setSelectedFolder}
             showSearch={showSearch}
-            searchQuery={searchQuery}
+            searchQuery={searchInput}
             onSearchChange={handleSearch}
             onSearchClick={() => {
               if (showSearch) {
