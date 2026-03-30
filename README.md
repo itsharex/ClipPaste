@@ -65,9 +65,9 @@
 
 | Platform | Architecture | Format |
 |:---------|:-------------|:-------|
-| **Windows** | x64, ARM64 | `.exe` (NSIS installer) |
+| **Windows** | x64, ARM64 | `.exe` (NSIS), `.msi` |
 | **macOS** | Apple Silicon (M1+), Intel | `.dmg` |
-| **Linux** | x64 | `.deb`, `.AppImage` |
+| **Linux** | x64 | `.deb`, `.AppImage`, `.rpm` |
 
 ### Platform Notes
 

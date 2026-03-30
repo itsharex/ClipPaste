@@ -11,27 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [1.4.2] - 2026-03-30
+## [1.4.3] - 2026-03-30
 
 ### Added
 - **macOS support** — `.dmg` builds for Apple Silicon (M1+) and Intel
-- **Linux support** — `.deb` and `.AppImage` builds for x64
-- **Cross-platform CI/CD** — GitHub Actions now builds for Windows, macOS, and Linux
+- **Linux support** — `.deb`, `.AppImage`, and `.rpm` builds for x64
+- **Cross-platform CI/CD** — GitHub Actions now builds for Windows, macOS, and Linux (5 targets)
 
 ### Changed
-- **New app icon** — redesigned SVG-based icon with gradient clipboard, cute face, sparkles, and transparent background; sharper at all sizes
-- **Platform-conditional code** — `windows` crate now only compiles on Windows targets; clipboard owner detection, icon extraction, and auto-paste gracefully degrade on non-Windows
-- **File/folder pickers** — use native dialogs on each platform (PowerShell on Windows, osascript on macOS, zenity on Linux)
-
-### Fixed
-- **window-vibrancy** — split dependency: custom fork for Windows, upstream v0.5 for macOS, no-op for Linux (fixes cross-platform build)
-
----
-
-## [1.4.0] - 2026-03-30
-
-### Changed
-- **New app icon** — redesigned SVG-based icon (v1.4.0 initial release)
+- **New app icon** — redesigned SVG-based vector icon with gradient clipboard, cute face, sparkles, and transparent background; crisp at all sizes from 32×32 to 512×512
+- **Platform-conditional code** — `windows` crate only compiles on Windows; clipboard owner detection, icon extraction, and auto-paste gracefully degrade on non-Windows
+- **File/folder pickers** — native dialogs per platform (PowerShell on Windows, osascript on macOS, zenity on Linux)
+- **window-vibrancy** — split dependency: custom fork for Windows (Mica/Tabbed/rounded corners), upstream v0.5 for macOS (vibrancy), no-op for Linux
 
 ---
 
