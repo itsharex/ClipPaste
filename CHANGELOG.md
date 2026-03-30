@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [1.4.1] - 2026-03-30
+## [1.4.2] - 2026-03-30
 
 ### Added
 - **macOS support** — `.dmg` builds for Apple Silicon (M1+) and Intel
@@ -22,6 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **New app icon** — redesigned SVG-based icon with gradient clipboard, cute face, sparkles, and transparent background; sharper at all sizes
 - **Platform-conditional code** — `windows` crate now only compiles on Windows targets; clipboard owner detection, icon extraction, and auto-paste gracefully degrade on non-Windows
 - **File/folder pickers** — use native dialogs on each platform (PowerShell on Windows, osascript on macOS, zenity on Linux)
+
+### Fixed
+- **window-vibrancy** — split dependency: custom fork for Windows, upstream v0.5 for macOS, no-op for Linux (fixes cross-platform build)
 
 ---
 

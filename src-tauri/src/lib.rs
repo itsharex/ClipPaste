@@ -13,7 +13,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 
 #[cfg(target_os = "macos")]
-use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
+use window_vibrancy_macos::{apply_vibrancy, NSVisualEffectMaterial};
 
 #[cfg(target_os = "windows")]
 use window_vibrancy::{switch_effect, apply_rounded_corners, clear_all_effects, Effect, CornerPreference};
@@ -761,5 +761,17 @@ pub fn apply_window_effect(window: &tauri::WebviewWindow, effect: &str, theme: &
 
         // Apply native rounded corners on Win11
         let _ = apply_rounded_corners(window, CornerPreference::Round);
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let _ = apply_vibrancy(window, NSVisualEffectMaterial::HudWindow, None, None);
+        log::info!("THEME: Applied macOS vibrancy");
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let _ = (window, effect, theme);
+        // No window effects on Linux
     }
 }
