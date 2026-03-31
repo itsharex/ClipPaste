@@ -10,6 +10,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use crate::models::{Clip, Folder, ClipboardItem, FolderItem};
 use dark_light::Mode;
 use dirs;
+use std::io::{Read as IoRead, Write as IoWrite};
 
 
 
@@ -54,15 +55,19 @@ pub async fn get_clips(filter_id: Option<String>, limit: i64, offset: i64, previ
 
     let items: Vec<ClipboardItem> = clips.iter().enumerate().map(|(idx, clip)| {
         let content_str = if preview_only && clip.clip_type == "image" {
-            // In preview mode, don't send full image data - just empty string
             String::new()
         } else if clip.clip_type == "image" {
-            BASE64.encode(&clip.content)
+            // Image content is now a filename — read from disk
+            let filename = String::from_utf8_lossy(&clip.content).to_string();
+            let image_path = db.images_dir.join(&filename);
+            match std::fs::read(&image_path) {
+                Ok(bytes) => BASE64.encode(&bytes),
+                Err(_) => String::new(),
+            }
         } else {
             String::from_utf8_lossy(&clip.content).to_string()
         };
 
-        // Only log first 10 clips to reduce noise
         if idx < 10 {
             log::trace!("{} Clip {}: type='{}', content_len={}", idx, clip.uuid, clip.clip_type, content_str.len());
         }
@@ -78,6 +83,9 @@ pub async fn get_clips(filter_id: Option<String>, limit: i64, offset: i64, previ
             source_icon: clip.source_icon.clone(),
             metadata: clip.metadata.clone(),
             is_pinned: clip.is_pinned,
+            subtype: clip.subtype.clone(),
+            note: clip.note.clone(),
+            paste_count: clip.paste_count,
         }
     }).collect();
 
@@ -95,7 +103,12 @@ pub async fn get_clip(id: String, db: tauri::State<'_, Arc<Database>>) -> Result
     match clip {
         Some(clip) => {
             let content_str = if clip.clip_type == "image" {
-                BASE64.encode(&clip.content)
+                let filename = String::from_utf8_lossy(&clip.content).to_string();
+                let image_path = db.images_dir.join(&filename);
+                match std::fs::read(&image_path) {
+                    Ok(bytes) => BASE64.encode(&bytes),
+                    Err(_) => String::new(),
+                }
             } else {
                 String::from_utf8_lossy(&clip.content).to_string()
             };
@@ -111,6 +124,9 @@ pub async fn get_clip(id: String, db: tauri::State<'_, Arc<Database>>) -> Result
                 source_icon: clip.source_icon,
                 metadata: clip.metadata,
                 is_pinned: clip.is_pinned,
+                subtype: clip.subtype,
+                note: clip.note,
+                paste_count: clip.paste_count,
             })
         }
         None => Err("Clip not found".to_string()),
@@ -168,8 +184,8 @@ pub async fn paste_clip(id: String, app: AppHandle, window: tauri::WebviewWindow
                 }
             }
 
-            // Track when this clip was last pasted (used for sort order)
-            let _ = sqlx::query(r#"UPDATE clips SET last_pasted_at = CURRENT_TIMESTAMP WHERE uuid = ?"#)
+            // Track when this clip was last pasted + increment paste count
+            let _ = sqlx::query(r#"UPDATE clips SET last_pasted_at = CURRENT_TIMESTAMP, paste_count = paste_count + 1 WHERE uuid = ?"#)
                 .bind(&uuid)
                 .execute(pool)
                 .await;
@@ -282,10 +298,28 @@ pub async fn paste_text(content: String, app: AppHandle, window: tauri::WebviewW
 pub async fn delete_clip(id: String, hard_delete: bool, db: tauri::State<'_, Arc<Database>>) -> Result<(), String> {
     let pool = &db.pool;
 
+    // If hard deleting an image clip, also remove the file from disk
     if hard_delete {
+        let clip_info: Option<(String, Vec<u8>)> = sqlx::query_as(
+            "SELECT clip_type, content FROM clips WHERE uuid = ?"
+        ).bind(&id).fetch_optional(pool).await.map_err(|e| e.to_string())?;
+
+        if let Some((clip_type, content)) = &clip_info {
+            if clip_type == "image" {
+                let filename = String::from_utf8_lossy(content).to_string();
+                let image_path = db.images_dir.join(&filename);
+                if image_path.exists() {
+                    let _ = std::fs::remove_file(&image_path);
+                }
+            }
+        }
+
         sqlx::query(r#"DELETE FROM clips WHERE uuid = ?"#)
             .bind(&id)
             .execute(pool).await.map_err(|e| e.to_string())?;
+        // Clean up FTS5 index
+        let _ = sqlx::query("DELETE FROM clips_fts WHERE uuid = ?")
+            .bind(&id).execute(pool).await;
     } else {
         sqlx::query(r#"UPDATE clips SET is_deleted = 1 WHERE uuid = ?"#)
             .bind(&id)
@@ -349,6 +383,16 @@ pub async fn delete_folder(id: String, db: tauri::State<'_, Arc<Database>>, wind
     let pool = &db.pool;
 
     let folder_id: i64 = id.parse().map_err(|_| "Invalid folder ID")?;
+
+    // Clean up image files for clips in this folder before deleting
+    let image_clips: Vec<(Vec<u8>,)> = sqlx::query_as(
+        "SELECT content FROM clips WHERE folder_id = ? AND clip_type = 'image'"
+    ).bind(folder_id).fetch_all(pool).await.map_err(|e| e.to_string())?;
+    for (content,) in &image_clips {
+        let filename = String::from_utf8_lossy(content).to_string();
+        let image_path = db.images_dir.join(&filename);
+        if image_path.exists() { let _ = std::fs::remove_file(&image_path); }
+    }
 
     // Hard-delete all clips in this folder first (user explicitly chose to delete the folder)
     sqlx::query(r#"DELETE FROM clips WHERE folder_id = ?"#)
@@ -419,15 +463,17 @@ pub async fn reorder_folders(folder_ids: Vec<String>, db: tauri::State<'_, Arc<D
 }
 
 #[tauri::command]
-pub async fn search_clips(query: String, filter_id: Option<String>, limit: i64, offset: i64, db: tauri::State<'_, Arc<Database>>) -> Result<Vec<ClipboardItem>, String> {
+pub async fn search_clips(query: String, filter_id: Option<String>, limit: i64, _offset: i64, db: tauri::State<'_, Arc<Database>>) -> Result<Vec<ClipboardItem>, String> {
     let pool = &db.pool;
 
-    let like_pattern = format!("%{}%", query);
-
-    // Search in-memory cache (instant), then fetch matched rows by UUID
     let query_lower = query.to_lowercase();
     let folder_filter: Option<i64> = filter_id.as_deref()
         .and_then(|id| id.parse::<i64>().ok());
+
+    // Split query into words for multi-word matching
+    let query_words: Vec<String> = query_lower.split_whitespace()
+        .map(|w| w.to_string())
+        .collect();
 
     let matched: Vec<String> = {
         let cache = crate::clipboard::SEARCH_CACHE.lock();
@@ -436,7 +482,8 @@ pub async fn search_clips(query: String, filter_id: Option<String>, limit: i64, 
                 if let Some(target_fid) = folder_filter {
                     if *fid != Some(target_fid) { return false; }
                 }
-                preview.contains(&query_lower)
+                // All words must be present (AND logic) — supports multi-word search
+                query_words.iter().all(|word| preview.contains(word))
             })
             .take(limit as usize)
             .map(|(uuid, _, _)| uuid.clone())
@@ -450,7 +497,8 @@ pub async fn search_clips(query: String, filter_id: Option<String>, limit: i64, 
         let sql = format!(
             "SELECT id, uuid, clip_type, '' as content, text_preview, content_hash,
                     folder_id, is_deleted, source_app, source_icon, metadata,
-                    created_at, last_accessed, last_pasted_at, is_pinned
+                    created_at, last_accessed, last_pasted_at, is_pinned,
+                    subtype, note, paste_count
              FROM clips WHERE uuid IN ({})
              ORDER BY created_at DESC",
             placeholders
@@ -483,10 +531,23 @@ pub async fn search_clips(query: String, filter_id: Option<String>, limit: i64, 
             source_icon: clip.source_icon.clone(),
             metadata: clip.metadata.clone(),
             is_pinned: clip.is_pinned,
+            subtype: clip.subtype.clone(),
+            note: clip.note.clone(),
+            paste_count: clip.paste_count,
         }
     }).collect();
 
     Ok(items)
+}
+
+#[tauri::command]
+pub async fn update_note(id: String, note: Option<String>, db: tauri::State<'_, Arc<Database>>) -> Result<(), String> {
+    let pool = &db.pool;
+    sqlx::query("UPDATE clips SET note = ? WHERE uuid = ?")
+        .bind(&note)
+        .bind(&id)
+        .execute(pool).await.map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -719,6 +780,16 @@ pub async fn clear_clipboard_history(db: tauri::State<'_, Arc<Database>>) -> Res
 #[tauri::command]
 pub async fn clear_all_clips(app: AppHandle, db: tauri::State<'_, Arc<Database>>) -> Result<(), String> {
     let pool = &db.pool;
+
+    // Clean up image files before deleting
+    let image_clips: Vec<(Vec<u8>,)> = sqlx::query_as(
+        "SELECT content FROM clips WHERE folder_id IS NULL AND clip_type = 'image'"
+    ).fetch_all(pool).await.map_err(|e| e.to_string())?;
+    for (content,) in &image_clips {
+        let filename = String::from_utf8_lossy(content).to_string();
+        let image_path = db.images_dir.join(&filename);
+        if image_path.exists() { let _ = std::fs::remove_file(&image_path); }
+    }
 
     sqlx::query(r#"DELETE FROM clips WHERE folder_id IS NULL"#)
         .execute(pool).await.map_err(|e| e.to_string())?;
@@ -1074,7 +1145,21 @@ pub async fn set_data_directory(
         // Copy DB file
         std::fs::copy(&current_db_path, &new_db_path)
             .map_err(|e| format!("Failed to copy database: {}", e))?;
-        
+
+        // Also migrate images directory
+        let current_images_dir = current_data_dir.join("images");
+        let new_images_dir = new_path_buf.join("images");
+        if current_images_dir.exists() {
+            std::fs::create_dir_all(&new_images_dir).ok();
+            if let Ok(entries) = std::fs::read_dir(&current_images_dir) {
+                for entry in entries.flatten() {
+                    let dest = new_images_dir.join(entry.file_name());
+                    let _ = std::fs::copy(entry.path(), dest);
+                }
+            }
+            log::info!("Images directory migrated successfully");
+        }
+
         log::info!("Database migrated successfully");
     }
     
@@ -1100,6 +1185,166 @@ pub async fn set_data_directory(
         "message": "Data directory changed. Please restart the application.",
         "new_path": new_path
     }));
-    
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn export_data(app: AppHandle, db: tauri::State<'_, Arc<Database>>) -> Result<String, String> {
+    // Let user pick save location
+    #[cfg(target_os = "windows")]
+    let save_path = {
+        let ps_script = r#"Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.SaveFileDialog; $d.Filter = 'Zip Archive (*.zip)|*.zip'; $d.FileName = 'ClipPaste-backup.zip'; $null = $d.ShowDialog(); $d.FileName"#;
+        let output = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-Command", ps_script])
+            .output()
+            .map_err(|e| e.to_string())?;
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if path.is_empty() { return Err("Export cancelled".to_string()); }
+        path
+    };
+    #[cfg(target_os = "macos")]
+    let save_path = {
+        let output = std::process::Command::new("osascript")
+            .args(["-e", r#"POSIX path of (choose file name with prompt "Export ClipPaste backup" default name "ClipPaste-backup.zip")"#])
+            .output()
+            .map_err(|e| e.to_string())?;
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if path.is_empty() { return Err("Export cancelled".to_string()); }
+        path
+    };
+    #[cfg(target_os = "linux")]
+    let save_path = {
+        let output = std::process::Command::new("zenity")
+            .args(["--file-selection", "--save", "--filename=ClipPaste-backup.zip"])
+            .output()
+            .map_err(|e| e.to_string())?;
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if path.is_empty() { return Err("Export cancelled".to_string()); }
+        path
+    };
+
+    // Checkpoint WAL to ensure all data is in the main DB file
+    let _ = sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)")
+        .execute(&db.pool).await;
+
+    let data_dir = db.images_dir.parent().unwrap();
+    let db_path = data_dir.join("clipboard.db");
+    let images_dir = &db.images_dir;
+
+    let file = std::fs::File::create(&save_path)
+        .map_err(|e| format!("Failed to create zip: {}", e))?;
+    let mut zip = zip::ZipWriter::new(file);
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+
+    // Add DB file
+    if db_path.exists() {
+        let mut db_file = std::fs::File::open(&db_path)
+            .map_err(|e| format!("Failed to read DB: {}", e))?;
+        let mut buf = Vec::new();
+        db_file.read_to_end(&mut buf).map_err(|e| e.to_string())?;
+        zip.start_file("clipboard.db", options).map_err(|e| e.to_string())?;
+        zip.write_all(&buf).map_err(|e| e.to_string())?;
+    }
+
+    // Add images
+    if images_dir.exists() {
+        if let Ok(entries) = std::fs::read_dir(images_dir) {
+            for entry in entries.flatten() {
+                if let Ok(mut f) = std::fs::File::open(entry.path()) {
+                    let name = format!("images/{}", entry.file_name().to_string_lossy());
+                    let mut buf = Vec::new();
+                    if f.read_to_end(&mut buf).is_ok() {
+                        let _ = zip.start_file(&name, options);
+                        let _ = zip.write_all(&buf);
+                    }
+                }
+            }
+        }
+    }
+
+    zip.finish().map_err(|e| e.to_string())?;
+    log::info!("Exported backup to: {}", save_path);
+    Ok(save_path)
+}
+
+#[tauri::command]
+pub async fn import_data(app: AppHandle, db: tauri::State<'_, Arc<Database>>) -> Result<(), String> {
+    // Let user pick zip file
+    #[cfg(target_os = "windows")]
+    let zip_path = {
+        let ps_script = r#"Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.OpenFileDialog; $d.Filter = 'Zip Archive (*.zip)|*.zip'; $null = $d.ShowDialog(); $d.FileName"#;
+        let output = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-Command", ps_script])
+            .output()
+            .map_err(|e| e.to_string())?;
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if path.is_empty() { return Err("Import cancelled".to_string()); }
+        path
+    };
+    #[cfg(target_os = "macos")]
+    let zip_path = {
+        let output = std::process::Command::new("osascript")
+            .args(["-e", r#"POSIX path of (choose file of type {"zip"} with prompt "Import ClipPaste backup")"#])
+            .output()
+            .map_err(|e| e.to_string())?;
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if path.is_empty() { return Err("Import cancelled".to_string()); }
+        path
+    };
+    #[cfg(target_os = "linux")]
+    let zip_path = {
+        let output = std::process::Command::new("zenity")
+            .args(["--file-selection", "--file-filter=*.zip"])
+            .output()
+            .map_err(|e| e.to_string())?;
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if path.is_empty() { return Err("Import cancelled".to_string()); }
+        path
+    };
+
+    let data_dir = db.images_dir.parent().unwrap().to_path_buf();
+
+    let file = std::fs::File::open(&zip_path)
+        .map_err(|e| format!("Failed to open zip: {}", e))?;
+    let mut archive = zip::ZipArchive::new(file)
+        .map_err(|e| format!("Invalid zip: {}", e))?;
+
+    // Validate: must contain clipboard.db
+    let has_db = (0..archive.len()).any(|i| {
+        archive.by_index(i).map(|f| f.name() == "clipboard.db").unwrap_or(false)
+    });
+    if !has_db {
+        return Err("Invalid backup: clipboard.db not found in zip".to_string());
+    }
+
+    // Extract all files
+    for i in 0..archive.len() {
+        let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
+        let name = entry.name().to_string();
+
+        // Security: reject path traversal
+        if name.contains("..") { continue; }
+
+        let out_path = data_dir.join(&name);
+        if let Some(parent) = out_path.parent() {
+            std::fs::create_dir_all(parent).ok();
+        }
+
+        let mut buf = Vec::new();
+        entry.read_to_end(&mut buf).map_err(|e| e.to_string())?;
+        std::fs::write(&out_path, &buf)
+            .map_err(|e| format!("Failed to write {}: {}", name, e))?;
+    }
+
+    log::info!("Imported backup from: {}", zip_path);
+
+    // Notify frontend to restart
+    let _ = app.emit("data-directory-changed", &serde_json::json!({
+        "message": "Backup imported. Please restart the application.",
+        "new_path": data_dir.to_string_lossy()
+    }));
+
     Ok(())
 }

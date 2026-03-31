@@ -400,7 +400,15 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
               ) : null}
               {cat.name}
               {cat.count !== undefined && cat.count > 0 && (
-                <span className="ml-2 text-[10px] opacity-70">{cat.count}</span>
+                <span
+                  key={cat.id === null ? `all-${cat.count}` : undefined}
+                  className={clsx(
+                    'ml-2 text-[10px] opacity-70',
+                    cat.id === null && 'transition-all duration-300'
+                  )}
+                >
+                  {cat.count}
+                </span>
               )}
             </button>
           );

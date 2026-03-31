@@ -87,7 +87,7 @@ pub fn run_app() {
     let _guard = rt.enter();
 
     let db = rt.block_on(async {
-        Database::new(&db_path_str).await
+        Database::new(&db_path_str, &data_dir).await
     });
 
     rt.block_on(async {
@@ -361,6 +361,9 @@ pub fn run_app() {
             let db_for_cache = db_for_clipboard.clone();
             tauri::async_runtime::spawn(async move {
                 clipboard::load_search_cache(&db_for_cache.pool).await;
+                // Enforce max_items + clean up orphan images on startup
+                db_for_cache.enforce_max_items().await;
+                db_for_cache.cleanup_orphan_images().await;
             });
 
             Ok(())
@@ -399,7 +402,10 @@ pub fn run_app() {
             commands::reorder_folders,
             commands::toggle_pin,
             commands::paste_text,
-            commands::set_dragging
+            commands::set_dragging,
+            commands::update_note,
+            commands::export_data,
+            commands::import_data
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

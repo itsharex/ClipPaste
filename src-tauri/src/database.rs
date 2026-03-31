@@ -1,23 +1,26 @@
 use sqlx::SqlitePool;
+use std::path::PathBuf;
 
 #[derive(Clone)]
 pub struct Database {
     pub pool: SqlitePool,
+    pub images_dir: PathBuf,
 }
 
 impl Database {
-    pub async fn new(db_path: &str) -> Self {
+    pub async fn new(db_path: &str, data_dir: &std::path::Path) -> Self {
         let options = sqlx::sqlite::SqliteConnectOptions::new()
             .filename(db_path)
-            .create_if_missing(true)
-            .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal)
-            .synchronous(sqlx::sqlite::SqliteSynchronous::Normal);
+            .create_if_missing(true);
 
         let pool = SqlitePool::connect_with(options)
             .await
             .expect("Failed to connect to database");
 
-        Self { pool }
+        let images_dir = data_dir.join("images");
+        std::fs::create_dir_all(&images_dir).ok();
+
+        Self { pool, images_dir }
     }
 
     pub async fn migrate(&self) -> Result<(), sqlx::Error> {
@@ -88,6 +91,23 @@ impl Database {
         let _ = sqlx::query("ALTER TABLE clips ADD COLUMN is_pinned INTEGER DEFAULT 0")
             .execute(&self.pool).await;
 
+        // Add subtype column (url, email, color, path)
+        let _ = sqlx::query("ALTER TABLE clips ADD COLUMN subtype TEXT DEFAULT NULL")
+            .execute(&self.pool).await;
+
+        // Add note column for user annotations
+        let _ = sqlx::query("ALTER TABLE clips ADD COLUMN note TEXT DEFAULT NULL")
+            .execute(&self.pool).await;
+
+        // Add paste_count column for usage tracking
+        let _ = sqlx::query("ALTER TABLE clips ADD COLUMN paste_count INTEGER DEFAULT 0")
+            .execute(&self.pool).await;
+
+        // === Migrate image blobs to disk ===
+        // Images previously stored as BLOBs in content column are now stored as files.
+        // content column will hold just the filename (e.g. "abc123.png").
+        self.migrate_images_to_disk().await;
+
         // === FTS5 Full-Text Search ===
         // Create FTS5 virtual table for fast text search
         sqlx::query(r#"
@@ -127,6 +147,122 @@ impl Database {
         }
 
        Ok(())
+    }
+
+    /// Returns the full path for an image filename
+    pub fn image_path(&self, filename: &str) -> PathBuf {
+        self.images_dir.join(filename)
+    }
+
+    /// Enforce max_items setting — delete oldest non-folder clips exceeding the limit.
+    /// Also cleans up image files for deleted image clips.
+    pub async fn enforce_max_items(&self) {
+        let max_items: i64 = sqlx::query_scalar("SELECT value FROM settings WHERE key = 'max_items'")
+            .fetch_optional(&self.pool).await.unwrap_or(None)
+            .and_then(|v: String| v.parse().ok())
+            .unwrap_or(1000);
+
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM clips WHERE is_deleted = 0 AND folder_id IS NULL")
+            .fetch_one(&self.pool).await.unwrap_or(0);
+
+        if count <= max_items { return; }
+
+        let excess = count - max_items;
+        log::info!("DB: Trimming {} clips exceeding max_items={}", excess, max_items);
+
+        // Get image filenames for clips about to be deleted
+        let image_clips: Vec<(Vec<u8>,)> = sqlx::query_as(
+            "SELECT content FROM clips WHERE is_deleted = 0 AND folder_id IS NULL AND clip_type = 'image'
+             ORDER BY created_at ASC LIMIT ?"
+        ).bind(excess).fetch_all(&self.pool).await.unwrap_or_default();
+
+        for (content,) in &image_clips {
+            let filename = String::from_utf8_lossy(content).to_string();
+            let path = self.images_dir.join(&filename);
+            if path.exists() { let _ = std::fs::remove_file(&path); }
+        }
+
+        // Delete oldest non-folder clips
+        let _ = sqlx::query(
+            "DELETE FROM clips WHERE id IN (
+                SELECT id FROM clips WHERE is_deleted = 0 AND folder_id IS NULL
+                ORDER BY created_at ASC LIMIT ?
+            )"
+        ).bind(excess).execute(&self.pool).await;
+    }
+
+    /// Clean up orphan image files (files in images/ that have no matching clip)
+    pub async fn cleanup_orphan_images(&self) {
+        let entries = match std::fs::read_dir(&self.images_dir) {
+            Ok(e) => e,
+            Err(_) => return,
+        };
+
+        let mut orphans = 0u64;
+        for entry in entries.flatten() {
+            let filename = entry.file_name().to_string_lossy().to_string();
+            let exists: bool = sqlx::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM clips WHERE clip_type = 'image' AND CAST(content AS TEXT) = ?"
+            ).bind(&filename).fetch_one(&self.pool).await.unwrap_or(0) > 0;
+
+            if !exists {
+                let _ = std::fs::remove_file(entry.path());
+                orphans += 1;
+            }
+        }
+
+        if orphans > 0 {
+            log::info!("DB: Cleaned up {} orphan image files", orphans);
+        }
+    }
+
+    /// Migrate existing image BLOBs from the database to disk files.
+    /// After migration, the `content` column holds just the filename.
+    async fn migrate_images_to_disk(&self) {
+        // Find image clips whose content is larger than a filename would be (> 260 bytes = raw BLOB)
+        let rows: Vec<(i64, Vec<u8>, String)> = sqlx::query_as(
+            "SELECT id, content, content_hash FROM clips WHERE clip_type = 'image' AND LENGTH(content) > 260"
+        ).fetch_all(&self.pool).await.unwrap_or_default();
+
+        if rows.is_empty() { return; }
+
+        log::info!("DB: Migrating {} image BLOBs to disk...", rows.len());
+        let mut migrated = 0u64;
+
+        for (id, blob, hash) in &rows {
+            let filename = format!("{}.png", hash);
+            let file_path = self.images_dir.join(&filename);
+
+            // Write blob to file (skip if already exists)
+            if !file_path.exists() {
+                if let Err(e) = std::fs::write(&file_path, blob) {
+                    log::error!("DB: Failed to write image file {:?}: {}", file_path, e);
+                    continue;
+                }
+            }
+
+            // Update DB: replace blob with just the filename
+            if let Err(e) = sqlx::query("UPDATE clips SET content = ? WHERE id = ?")
+                .bind(filename.as_bytes())
+                .bind(id)
+                .execute(&self.pool)
+                .await
+            {
+                log::error!("DB: Failed to update clip {} after image migration: {}", id, e);
+                continue;
+            }
+            migrated += 1;
+        }
+
+        log::info!("DB: Migrated {} image BLOBs to disk.", migrated);
+
+        // VACUUM to reclaim disk space after removing large BLOBs
+        log::info!("DB: Running VACUUM to reclaim space...");
+        if let Err(e) = sqlx::query("VACUUM").execute(&self.pool).await {
+            log::warn!("DB: VACUUM failed (non-fatal): {}", e);
+        } else {
+            log::info!("DB: VACUUM complete.");
+        }
     }
 
     pub async fn add_ignored_app(&self, app_name: &str) -> Result<(), sqlx::Error> {

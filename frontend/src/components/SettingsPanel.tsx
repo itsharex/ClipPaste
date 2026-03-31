@@ -660,6 +660,38 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
                       >
                         Remove Duplicates
                       </button>
+
+                      <button
+                        onClick={async () => {
+                          try {
+                            const path = await invoke<string>('export_data');
+                            toast.success(`Exported to ${path}`);
+                          } catch (error) {
+                            if (String(error) !== 'Export cancelled') {
+                              toast.error(`Export failed: ${error}`);
+                            }
+                          }
+                        }}
+                        className="btn btn-secondary text-xs"
+                      >
+                        Export Backup
+                      </button>
+
+                      <button
+                        onClick={async () => {
+                          try {
+                            await invoke('import_data');
+                            toast.success('Backup imported. Restart to apply.');
+                          } catch (error) {
+                            if (String(error) !== 'Import cancelled') {
+                              toast.error(`Import failed: ${error}`);
+                            }
+                          }
+                        }}
+                        className="btn btn-secondary text-xs"
+                      >
+                        Import Backup
+                      </button>
                     </div>
                   </section>
                 </>

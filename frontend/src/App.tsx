@@ -9,6 +9,7 @@ import { ControlBar } from './components/ControlBar';
 import { ContextMenu } from './components/ContextMenu';
 import { FolderModal } from './components/FolderModal';
 import { EditClipModal } from './components/EditClipModal';
+import { NoteModal } from './components/NoteModal';
 import { useKeyboard } from './hooks/useKeyboard';
 import { useTheme } from './hooks/useTheme';
 import { Toaster, toast } from 'sonner';
@@ -323,9 +324,15 @@ function App() {
 
   // Subscribe ONCE — uses refs so the callback is always fresh without re-subscribing
   useEffect(() => {
-    const unlistenClipboard = listen('clipboard-change', () => {
+    const unlistenClipboard = listen<{ clip_type?: string }>('clipboard-change', (event) => {
       refreshCurrentFolderRef.current();
       debouncedFolderRefreshRef.current();
+      // Visual feedback: clip saved
+      const type = event.payload?.clip_type || 'text';
+      toast.success(type === 'image' ? 'Image saved' : 'Clip saved', {
+        duration: 1500,
+        style: { fontSize: '12px', padding: '6px 12px' },
+      });
     });
 
     return () => {
@@ -507,6 +514,10 @@ function App() {
   // Edit clip before paste
   const [editingClip, setEditingClip] = useState<AppClipboardItem | null>(null);
 
+  // Note modal state
+  const [noteModalClipId, setNoteModalClipId] = useState<string | null>(null);
+  const [noteModalInitial, setNoteModalInitial] = useState('');
+
   // Folder hover preview state
   const [previewFolder, setPreviewFolder] = useState<string | null | undefined>(undefined);
   const [previewClips, setPreviewClips] = useState<AppClipboardItem[]>([]);
@@ -642,6 +653,26 @@ function App() {
     setContextMenu(null);
   }, []);
 
+  const handleEditNote = useCallback((clipId: string) => {
+    const clip = clipsRef.current.find((c) => c.id === clipId);
+    setNoteModalClipId(clipId);
+    setNoteModalInitial(clip?.note || '');
+  }, []);
+
+  const handleSaveNote = useCallback(async (clipId: string, note: string | null) => {
+    setNoteModalClipId(null);
+    try {
+      await invoke('update_note', { id: clipId, note });
+      setClips((prev) =>
+        prev.map((c) => (c.id === clipId ? { ...c, note } : c))
+      );
+      toast.success(note ? 'Note saved' : 'Note removed');
+    } catch (error) {
+      console.error('Failed to update note:', error);
+      toast.error('Failed to save note');
+    }
+  }, []);
+
   const handleEditBeforePaste = useCallback((clipId: string) => {
     const clip = clipsRef.current.find((c) => c.id === clipId);
     if (clip && clip.clip_type !== 'image') {
@@ -740,13 +771,9 @@ function App() {
                       ...(clips.find((c) => c.id === contextMenu.itemId)?.clip_type !== 'image'
                         ? [{ label: 'Chỉnh sửa trước khi paste', onClick: () => handleEditBeforePaste(contextMenu.itemId) }]
                         : []),
-                      ...folders.map((folder) => ({
-                        label: `Move to "${folder.name}"`,
-                        onClick: () => handleMoveClip(contextMenu.itemId, folder.id),
-                      })),
                       {
-                        label: 'Remove from folder',
-                        onClick: () => handleMoveClip(contextMenu.itemId, null),
+                        label: clips.find((c) => c.id === contextMenu.itemId)?.note ? 'Edit note' : 'Add note',
+                        onClick: () => handleEditNote(contextMenu.itemId),
                       },
                       {
                         label: 'Delete',
@@ -788,6 +815,14 @@ function App() {
             clip={editingClip}
             onPaste={handlePasteEdited}
             onClose={() => setEditingClip(null)}
+          />
+
+          <NoteModal
+            isOpen={!!noteModalClipId}
+            clipId={noteModalClipId}
+            initialNote={noteModalInitial}
+            onSave={handleSaveNote}
+            onClose={() => setNoteModalClipId(null)}
           />
 
           <ControlBar

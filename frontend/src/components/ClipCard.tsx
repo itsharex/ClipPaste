@@ -2,7 +2,7 @@ import { ClipboardItem } from '../types';
 import { clsx } from 'clsx';
 import { useMemo, memo, useState, useRef } from 'react';
 import { LAYOUT, TOTAL_COLUMN_WIDTH, PREVIEW_CHAR_LIMIT } from '../constants';
-import { Copy, Check, Pin } from 'lucide-react';
+import { Copy, Check, Pin, Link, Mail, Palette, FolderOpen, StickyNote } from 'lucide-react';
 
 interface ClipCardProps {
   clip: ClipboardItem;
@@ -15,6 +15,24 @@ interface ClipCardProps {
   onNativeDragStart?: (e: React.DragEvent, clip: ClipboardItem) => void;
   onContextMenu?: (e: React.MouseEvent) => void;
 }
+
+/** Try to extract domain from a URL string */
+function extractDomain(url: string): string | null {
+  try {
+    const u = new URL(url.trim());
+    return u.hostname.replace(/^www\./, '');
+  } catch {
+    return null;
+  }
+}
+
+/** Subtype badge config */
+const SUBTYPE_CONFIG: Record<string, { icon: typeof Link; label: string; color: string }> = {
+  url: { icon: Link, label: 'URL', color: 'text-blue-400' },
+  email: { icon: Mail, label: 'Email', color: 'text-emerald-400' },
+  color: { icon: Palette, label: 'Color', color: 'text-pink-400' },
+  path: { icon: FolderOpen, label: 'Path', color: 'text-amber-400' },
+};
 
 export const ClipCard = memo(function ClipCard({
   clip,
@@ -30,7 +48,7 @@ export const ClipCard = memo(function ClipCard({
   const [copied, setCopied] = useState(false);
   const title = clip.source_app || clip.clip_type.toUpperCase();
 
-  // Memoize the content rendering
+  // Memoize the content rendering — now subtype-aware
   const renderedContent = useMemo(() => {
     if (clip.clip_type === 'image') {
       return (
@@ -42,14 +60,78 @@ export const ClipCard = memo(function ClipCard({
           />
         </div>
       );
-    } else {
+    }
+
+    // Color subtype — large swatch + text
+    if (clip.subtype === 'color') {
+      const color = clip.content.trim();
       return (
-        <pre className="whitespace-pre-wrap break-all font-mono text-[13px] leading-tight text-foreground">
-          <span>{clip.content.substring(0, PREVIEW_CHAR_LIMIT)}</span>
-        </pre>
+        <div className="flex h-full w-full flex-col items-center justify-center gap-2">
+          <div
+            className="h-14 w-14 rounded-xl border-2 border-white/20 shadow-lg"
+            style={{ backgroundColor: color }}
+          />
+          <span className="font-mono text-[13px] font-semibold text-foreground/80">{color}</span>
+        </div>
       );
     }
-  }, [clip.clip_type, clip.content]);
+
+    // URL subtype — show domain badge + full URL readable
+    if (clip.subtype === 'url') {
+      const domain = extractDomain(clip.content);
+      return (
+        <div className="flex h-full w-full flex-col gap-1.5">
+          {domain && (
+            <div className="flex items-center gap-1.5 rounded-md bg-blue-500/10 px-1.5 py-1">
+              <Link size={12} className="flex-shrink-0 text-blue-400" />
+              <span className="truncate text-[12px] font-semibold text-blue-400">{domain}</span>
+            </div>
+          )}
+          <pre className="flex-1 whitespace-pre-wrap break-all font-mono text-[11px] leading-snug text-foreground/70">
+            {clip.content.substring(0, PREVIEW_CHAR_LIMIT)}
+          </pre>
+        </div>
+      );
+    }
+
+    // Email subtype — show email badge + full content
+    if (clip.subtype === 'email') {
+      return (
+        <div className="flex h-full w-full flex-col gap-1.5">
+          <div className="flex items-center gap-1.5 rounded-md bg-emerald-500/10 px-1.5 py-1">
+            <Mail size={12} className="flex-shrink-0 text-emerald-400" />
+            <span className="text-[11px] font-semibold text-emerald-400">Email</span>
+          </div>
+          <pre className="whitespace-pre-wrap break-all font-mono text-[12px] leading-snug text-foreground/90">
+            {clip.content.trim()}
+          </pre>
+        </div>
+      );
+    }
+
+    // Path subtype — show full path, word-wrap friendly
+    if (clip.subtype === 'path') {
+      const content = clip.content.trim();
+      return (
+        <div className="flex h-full w-full flex-col gap-1.5">
+          <div className="flex items-center gap-1.5 rounded-md bg-amber-500/10 px-1.5 py-1">
+            <FolderOpen size={12} className="flex-shrink-0 text-amber-400" />
+            <span className="text-[11px] font-semibold text-amber-400">Path</span>
+          </div>
+          <pre className="whitespace-pre-wrap break-all font-mono text-[12px] leading-snug text-foreground/90">
+            {content}
+          </pre>
+        </div>
+      );
+    }
+
+    // Default text
+    return (
+      <pre className="whitespace-pre-wrap break-all font-mono text-[13px] leading-tight text-foreground">
+        <span>{clip.content.substring(0, PREVIEW_CHAR_LIMIT)}</span>
+      </pre>
+    );
+  }, [clip.clip_type, clip.content, clip.subtype]);
 
   // Generate distinct color based on source app name
   const getAppGradient = (name: string) => {
@@ -78,6 +160,19 @@ export const ClipCard = memo(function ClipCard({
   };
 
   const headerColor = useMemo(() => getAppGradient(title), [title]);
+
+  // Subtype badge for header
+  const subtypeBadge = useMemo(() => {
+    if (!clip.subtype || !SUBTYPE_CONFIG[clip.subtype]) return null;
+    const cfg = SUBTYPE_CONFIG[clip.subtype];
+    const Icon = cfg.icon;
+    return (
+      <span className={clsx('flex items-center gap-0.5 rounded px-1 py-0.5 text-[9px] font-bold uppercase tracking-wider bg-black/15', cfg.color)}>
+        <Icon size={9} />
+        {cfg.label}
+      </span>
+    );
+  }, [clip.subtype]);
 
   const cardRef = useRef<HTMLDivElement>(null);
 
@@ -140,7 +235,8 @@ export const ClipCard = memo(function ClipCard({
           'group'
         )}
       >
-        <div className={clsx(headerColor, 'flex flex-shrink-0 items-center gap-2 px-2 py-1.5')}>
+        {/* Header */}
+        <div className={clsx(headerColor, 'flex flex-shrink-0 items-center gap-1.5 px-2 py-1.5')}>
           {clip.source_icon && (
             <img
               src={`data:image/png;base64,${clip.source_icon}`}
@@ -151,6 +247,7 @@ export const ClipCard = memo(function ClipCard({
           <span className="flex-1 truncate text-[11px] font-bold uppercase tracking-wider text-foreground shadow-sm">
             {title}
           </span>
+          {subtypeBadge}
           {showPin && (
             <button
               onClick={(e) => {
@@ -186,16 +283,31 @@ export const ClipCard = memo(function ClipCard({
           </button>
         </div>
 
+        {/* Content */}
         <div className="relative flex-1 overflow-hidden bg-card p-2">
           {renderedContent}
           <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-card/100 to-card/30" />
         </div>
 
-        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-card via-card/100 to-transparent/0 px-3 py-1.5">
-          <span className="text-[11px] font-medium text-muted-foreground/50">
+        {/* Note banner — shown above footer when clip has a note */}
+        {clip.note && (
+          <div className="flex items-center gap-1 border-t border-border/20 bg-amber-500/5 px-2 py-0.5">
+            <StickyNote size={9} className="flex-shrink-0 text-amber-400/70" />
+            <span className="truncate text-[10px] italic text-amber-400/70">{clip.note}</span>
+          </div>
+        )}
+
+        {/* Footer */}
+        <div className="flex items-center justify-between bg-card/80 px-2.5 py-1">
+          <span className="text-[10px] font-medium text-muted-foreground/40">
             {clip.clip_type === 'image'
-              ? `Image (${Math.round((clip.content.length * 0.75) / 1024)}KB)`
-              : `${clip.content.length} characters`}
+              ? `${Math.round((clip.content.length * 0.75) / 1024)}KB`
+              : `${clip.content.length} chars`}
+          </span>
+          <span className="flex items-center gap-2 text-[10px] text-muted-foreground/35">
+            {clip.paste_count > 0 && (
+              <span className="tabular-nums" title="Times pasted">×{clip.paste_count}</span>
+            )}
           </span>
         </div>
       </div>

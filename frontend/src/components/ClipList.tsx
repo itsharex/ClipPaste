@@ -1,4 +1,6 @@
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, useCallback } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import { clsx } from 'clsx';
 import { ClipboardItem } from '../types';
 import { ClipCard } from './ClipCard';
 import { LAYOUT, TOTAL_COLUMN_WIDTH } from '../constants';
@@ -53,38 +55,47 @@ export function ClipList({
     prevClipsKeyRef.current = clipsKey;
   }, [clipsKey]);
 
+  // Virtual list — horizontal
+  const virtualizer = useVirtualizer({
+    count: clips.length,
+    getScrollElement: () => containerRef.current,
+    estimateSize: () => TOTAL_COLUMN_WIDTH,
+    horizontal: true,
+    overscan: 3,
+  });
+
   // Scroll selected card into view when navigating with arrow keys
   useEffect(() => {
-    if (!selectedClipId || !containerRef.current) return;
-    const card = containerRef.current.querySelector(`[data-clip-id="${selectedClipId}"]`);
-    if (card) {
-      card.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+    if (!selectedClipId) return;
+    const index = clips.findIndex(c => c.id === selectedClipId);
+    if (index >= 0) {
+      virtualizer.scrollToIndex(index, { align: 'auto', behavior: 'smooth' });
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedClipId]);
 
   // Scroll to start when window is reopened
   useEffect(() => {
     if (resetScrollKey === undefined || resetScrollKey === 0) return;
-    if (containerRef.current) {
-      containerRef.current.scrollLeft = 0;
-    }
+    virtualizer.scrollToIndex(0);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resetScrollKey]);
 
-  // Native onScroll handler for infinite scroll
-  const handleScroll = () => {
+  // Infinite scroll — load more when near the end
+  const handleScroll = useCallback(() => {
     if (!containerRef.current || !hasMore || isLoading) return;
     const { scrollLeft, scrollWidth, clientWidth } = containerRef.current;
     if (scrollLeft + clientWidth >= scrollWidth - 300) {
       onLoadMore();
     }
-  };
+  }, [hasMore, isLoading, onLoadMore]);
 
   // Map vertical mouse wheel to horizontal scroll
-  const handleWheel = (e: React.WheelEvent) => {
+  const handleWheel = useCallback((e: React.WheelEvent) => {
     if (containerRef.current && e.deltaY !== 0) {
-      containerRef.current.scrollLeft += e.deltaY * 1;
+      containerRef.current.scrollLeft += e.deltaY;
     }
-  };
+  }, []);
 
   // Skeleton cards only while search is pending (not yet resolved)
   if (isSearchPending) {
@@ -111,19 +122,16 @@ export function ClipList({
             }}
           >
             <div className="relative flex h-full w-full flex-col overflow-hidden rounded-xl border border-border/30 bg-card/60 shadow-lg">
-              {/* Shimmer header */}
               <div className={`flex items-center gap-2 px-3 py-2 bg-gradient-to-r ${skeletonGradients[i]}`}>
                 <div className="h-4 w-4 rounded-full bg-white/20" />
                 <div className="h-3 w-20 rounded-full bg-white/20" />
               </div>
-              {/* Shimmer content */}
               <div className="flex-1 space-y-3 p-3">
                 <div className="skeleton-shimmer h-3 w-[85%] rounded-full bg-muted/15" />
                 <div className="skeleton-shimmer h-3 w-[60%] rounded-full bg-muted/15" style={{ animationDelay: '0.1s' }} />
                 <div className="skeleton-shimmer h-3 w-[72%] rounded-full bg-muted/15" style={{ animationDelay: '0.2s' }} />
                 <div className="skeleton-shimmer h-3 w-[45%] rounded-full bg-muted/15" style={{ animationDelay: '0.3s' }} />
               </div>
-              {/* Footer */}
               <div className="px-3 py-2">
                 <div className="h-2.5 w-16 rounded-full bg-muted/10" />
               </div>
@@ -170,33 +178,49 @@ export function ClipList({
   return (
     <div
       ref={containerRef}
-      className={`no-scrollbar flex h-full w-full flex-1 items-center gap-4 overflow-x-auto overflow-y-hidden px-4${isPreviewing ? ' opacity-80' : ''}`}
+      className={`no-scrollbar flex h-full w-full flex-1 overflow-x-auto overflow-y-hidden${isPreviewing ? ' opacity-80' : ''}`}
       onScroll={handleScroll}
       onWheel={handleWheel}
-      style={{
-        scrollBehavior: 'auto',
-      }}
+      style={{ scrollBehavior: 'auto' }}
     >
-      {clips.map((clip, index) => (
-        <div
-          key={clip.id}
-          className={isSearching ? undefined : 'animate-stagger-in'}
-          style={isSearching ? undefined : { animationDelay: `${index * 30}ms` }}
-          data-stagger-key={staggerKey}
-        >
-          <ClipCard
-            clip={clip}
-            isSelected={selectedClipId === clip.id}
-            onSelect={() => onSelectClip(clip.id)}
-            onPaste={() => onPaste(clip.id)}
-            onCopy={() => onCopy(clip.id)}
-            onPin={() => onPin(clip.id)}
-            showPin={showPin}
-            onNativeDragStart={onNativeDragStart}
-            onContextMenu={(e: React.MouseEvent) => onCardContextMenu?.(e, clip.id)}
-          />
-        </div>
-      ))}
+      {/* Virtual spacer — the full scrollable width */}
+      <div
+        className="relative h-full"
+        style={{
+          width: virtualizer.getTotalSize() + LAYOUT.SIDE_PADDING * 2,
+          minWidth: '100%',
+        }}
+      >
+        {virtualizer.getVirtualItems().map((virtualItem) => {
+          const clip = clips[virtualItem.index];
+          return (
+            <div
+              key={clip.id}
+              className={clsx('absolute flex items-center', isSearching ? undefined : 'animate-stagger-in')}
+              style={{
+                top: 0,
+                left: virtualItem.start + LAYOUT.SIDE_PADDING,
+                width: virtualItem.size,
+                height: '100%',
+                ...(isSearching ? {} : { animationDelay: `${virtualItem.index * 30}ms` }),
+              }}
+              data-stagger-key={staggerKey}
+            >
+              <ClipCard
+                clip={clip}
+                isSelected={selectedClipId === clip.id}
+                onSelect={() => onSelectClip(clip.id)}
+                onPaste={() => onPaste(clip.id)}
+                onCopy={() => onCopy(clip.id)}
+                onPin={() => onPin(clip.id)}
+                showPin={showPin}
+                onNativeDragStart={onNativeDragStart}
+                onContextMenu={(e: React.MouseEvent) => onCardContextMenu?.(e, clip.id)}
+              />
+            </div>
+          );
+        })}
+      </div>
 
       {/* Loading indicator at the end */}
       {isLoading && clips.length > 0 && (
@@ -204,9 +228,6 @@ export function ClipList({
           <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
         </div>
       )}
-
-      {/* Spacer end */}
-      <div className="h-full min-w-[20px] flex-shrink-0" />
     </div>
   );
 }

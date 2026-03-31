@@ -9,6 +9,9 @@ export interface ClipboardItem {
   source_icon: string | null;
   metadata: string | null;
   is_pinned: boolean;
+  subtype: string | null;
+  note: string | null;
+  paste_count: number;
 }
 
 export interface FolderItem {

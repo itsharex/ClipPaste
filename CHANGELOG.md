@@ -11,6 +11,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.4.8] - 2026-03-31
+
+### Added
+- **Image storage on disk** — images saved as `{hash}.png` in `images/` directory instead of BLOB in DB, with auto-migration from old format and VACUUM to reclaim space
+- **Subtype detection** — auto-detect URL, email, color code, file path when copying; displayed with visual badges and styled cards
+- **Note for clips** — add/edit notes on any clip via right-click context menu (in-app modal, no window.prompt)
+- **Paste count** — tracks how many times each clip is pasted, shown as ×N on card footer
+- **Virtual horizontal list** — `@tanstack/react-virtual` renders only visible cards (~5-6 DOM elements regardless of list size)
+- **Multi-word search** — "docker compose" matches clips containing both "docker" AND "compose" anywhere
+- **Export/Import backup** — zip archive containing `clipboard.db` + `images/` folder, accessible from Settings
+- **Clip saved toast** — visual confirmation when a new clip is captured
+- **Auto-delete old clips** — enforces `max_items` setting on startup, removes oldest non-folder clips
+- **Orphan image cleanup** — removes disk images without matching DB record on startup
+
+### Changed
+- **DB config reverted to SQLite defaults** — DELETE journal mode + synchronous Full (no WAL), matching Ditto/CopyQ/Maccy
+- **Context menu simplified** — removed "Move to folder" options (drag-and-drop handles this)
+- **Card footer redesigned** — shows character count / image size + paste count
+
+### Performance
+- **DB size reduced** — image BLOBs removed from DB, file typically shrinks from ~40MB to ~2MB after VACUUM
+- **Virtual list** — constant DOM element count regardless of clip history size; smooth scroll with 10,000+ clips
+
+---
+
 ## [1.4.7] - 2026-03-31
 
 ### Added

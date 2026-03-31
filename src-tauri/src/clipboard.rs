@@ -77,6 +77,59 @@ pub fn remove_from_search_cache(uuid: &str) {
     cache.retain(|(u, _, _)| u != uuid);
 }
 
+/// Detect content subtype from text (url, email, color, path)
+pub fn detect_subtype(text: &str) -> Option<String> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() { return None; }
+
+    // URL
+    if (trimmed.starts_with("http://") || trimmed.starts_with("https://"))
+        && !trimmed.contains(char::is_whitespace)
+    {
+        return Some("url".to_string());
+    }
+
+    // Email (simple check: single @, no spaces, domain has dot)
+    if trimmed.contains('@') && !trimmed.contains(char::is_whitespace) {
+        let parts: Vec<&str> = trimmed.split('@').collect();
+        if parts.len() == 2 && !parts[0].is_empty() && parts[1].contains('.') {
+            return Some("email".to_string());
+        }
+    }
+
+    // Color: hex (#fff, #ffffff, #ffffffff)
+    if trimmed.starts_with('#') {
+        let hex = &trimmed[1..];
+        if (hex.len() == 3 || hex.len() == 6 || hex.len() == 8)
+            && hex.chars().all(|c| c.is_ascii_hexdigit())
+        {
+            return Some("color".to_string());
+        }
+    }
+
+    // Color: rgb()/rgba()/hsl()/hsla()
+    if trimmed.starts_with("rgb(") || trimmed.starts_with("rgba(")
+        || trimmed.starts_with("hsl(") || trimmed.starts_with("hsla(")
+    {
+        return Some("color".to_string());
+    }
+
+    // File path: Windows (C:\...) or UNC (\\...)
+    if trimmed.len() >= 3 {
+        let bytes = trimmed.as_bytes();
+        if bytes.len() >= 3 && bytes[1] == b':' && (bytes[2] == b'\\' || bytes[2] == b'/') {
+            return Some("path".to_string());
+        }
+    }
+
+    // File path: Unix absolute
+    if trimmed.starts_with('/') && !trimmed.contains(char::is_whitespace) && trimmed.len() > 1 {
+        return Some("path".to_string());
+    }
+
+    None
+}
+
 pub fn set_ignore_hash(hash: String) {
     let mut lock = IGNORE_HASH.lock();
     *lock = Some(hash);
@@ -141,14 +194,11 @@ async fn process_clipboard_change(app: AppHandle, db: Arc<Database>, source_app_
     let mut clip_preview = String::new();
     let mut clip_hash = String::new();
     let mut metadata = String::new();
+    let mut clip_subtype: Option<String> = None;
     let mut found_content = false;
 
     // Try Image
-    // read_image saves to disk and returns info
-    // We pass None for save_path to use default
     if let Ok(read_image_result) = read_image(app.clone(), None).await {
-         // read_image_result is ReadImage { path: PathBuf, ... }
-         // We need to read the file content
          if let Ok(bytes) = std::fs::read(&read_image_result.path) {
              if let Ok(image) = image::load_from_memory(&bytes) {
                  let width = image.width();
@@ -156,18 +206,31 @@ async fn process_clipboard_change(app: AppHandle, db: Arc<Database>, source_app_
                  let size_bytes = bytes.len();
 
                  clip_hash = calculate_hash(&bytes);
-                 clip_content = bytes;
+
+                 // Save image to disk: {images_dir}/{hash}.png
+                 let filename = format!("{}.png", &clip_hash);
+                 let image_file_path = db.image_path(&filename);
+                 if !image_file_path.exists() {
+                     if let Err(e) = std::fs::write(&image_file_path, &bytes) {
+                         log::error!("CLIPBOARD: Failed to save image to disk: {}", e);
+                         let _ = std::fs::remove_file(read_image_result.path);
+                         return;
+                     }
+                 }
+
+                 // Store just the filename in content (not the raw blob)
+                 clip_content = filename.as_bytes().to_vec();
                  clip_type = "image";
                  clip_preview = "[Image]".to_string();
                  metadata = serde_json::json!({
                      "width": width,
                      "height": height,
-                     "format": "png", // Usually it saves as png? Code said format string "{hash}.png"
+                     "format": "png",
                      "size_bytes": size_bytes
                  }).to_string();
                  found_content = true;
 
-                 // Clean up the temp file
+                 // Clean up the temp file from clipboard plugin
                  let _ = std::fs::remove_file(read_image_result.path);
              }
          }
@@ -182,8 +245,9 @@ async fn process_clipboard_change(app: AppHandle, db: Arc<Database>, source_app_
                  clip_hash = calculate_hash(&clip_content);
                  clip_type = "text";
                  clip_preview = text.chars().take(2000).collect::<String>();
+                 clip_subtype = detect_subtype(text);
                  found_content = true;
-                log::debug!("CLIPBOARD: Found text ({} chars)", clip_preview.len());
+                log::debug!("CLIPBOARD: Found text ({} chars, subtype: {:?})", clip_preview.len(), clip_subtype);
              }
         }
     }
@@ -278,8 +342,8 @@ async fn process_clipboard_change(app: AppHandle, db: Arc<Database>, source_app_
         let clip_uuid = Uuid::new_v4().to_string();
 
         if let Err(e) = sqlx::query(r#"
-            INSERT INTO clips (uuid, clip_type, content, text_preview, content_hash, folder_id, is_deleted, source_app, source_icon, metadata, created_at, last_accessed)
-            VALUES (?, ?, ?, ?, ?, NULL, 0, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            INSERT INTO clips (uuid, clip_type, content, text_preview, content_hash, folder_id, is_deleted, source_app, source_icon, metadata, subtype, created_at, last_accessed)
+            VALUES (?, ?, ?, ?, ?, NULL, 0, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         "#)
         .bind(&clip_uuid)
         .bind(clip_type)
@@ -289,6 +353,7 @@ async fn process_clipboard_change(app: AppHandle, db: Arc<Database>, source_app_
         .bind(&source_app)
         .bind(&source_icon)
         .bind(if clip_type == "image" { Some(metadata) } else { None })
+        .bind(&clip_subtype)
         .execute(pool)
         .await
         {
@@ -298,6 +363,15 @@ async fn process_clipboard_change(app: AppHandle, db: Arc<Database>, source_app_
 
         // Update in-memory search cache
         add_to_search_cache(&clip_uuid, &clip_preview, None);
+
+        // Update FTS5 index for text clips
+        if clip_type != "image" {
+            let _ = sqlx::query("INSERT INTO clips_fts(uuid, text_content) VALUES (?, ?)")
+                .bind(&clip_uuid)
+                .bind(&clip_preview)
+                .execute(pool)
+                .await;
+        }
 
         let _ = app.emit("clipboard-change", &serde_json::json!({
             "id": clip_uuid,
