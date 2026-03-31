@@ -159,3 +159,19 @@ Items saved in user-created folders are **protected** — they can only be delet
 | `remove_duplicate_clips` | Dedup query scoped to `folder_id IS NULL` in both outer DELETE and inner SELECT MIN(id) — folder items are never removed |
 
 > **Rule**: Any future bulk-delete or auto-trim logic (e.g. `max_items` enforcement, `auto_delete_days`) **must** include `AND folder_id IS NULL` to preserve folder contents.
+
+## Release Checklist
+
+**NEVER re-tag the same version.** Users on that version won't receive the auto-update (Tauri updater compares version strings — same version = no update). Always bump to a new version for hotfixes.
+
+1. Update version in **all 3 files** (must match):
+   - `src-tauri/tauri.conf.json` → `version`
+   - `src-tauri/Cargo.toml` → `version`
+   - `package.json` → `version`
+2. Update `CHANGELOG.md` — add new section under `[Unreleased]`
+3. Update `.claude/CLAUDE.md` — version in Project Overview
+4. Commit all changes
+5. `git tag vX.Y.Z` — tag the commit
+6. `git push origin main vX.Y.Z` — push commit + tag (triggers CI)
+7. Wait for CI — all 6 targets must pass (macOS ×2, Windows ×2, Linux ×1 + create-release)
+8. If CI fails → fix, bump version again (e.g. v1.4.6 → v1.4.7), repeat from step 1
