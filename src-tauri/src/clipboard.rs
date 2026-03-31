@@ -78,6 +78,11 @@ pub fn init(app: &AppHandle, db: Arc<Database>) {
         let app = app_clone.clone();
         let db = db_clone.clone();
 
+        // Capture source app info IMMEDIATELY before debounce.
+        // On macOS, frontmostApplication returns the current foreground app,
+        // which may change during the 150ms debounce window.
+        let source_app_info = get_clipboard_owner_app_info();
+
         // DEBOUNCE LOGIC:
         let current_count = DEBOUNCE_COUNTER.fetch_add(1, Ordering::SeqCst) + 1;
 
@@ -89,12 +94,14 @@ pub fn init(app: &AppHandle, db: Arc<Database>) {
                 return;
             }
 
-            process_clipboard_change(app, db).await;
+            process_clipboard_change(app, db, source_app_info).await;
         });
     });
 }
 
-async fn process_clipboard_change(app: AppHandle, db: Arc<Database>) {
+type SourceAppInfo = (Option<String>, Option<String>, Option<String>, Option<String>, bool);
+
+async fn process_clipboard_change(app: AppHandle, db: Arc<Database>, source_app_info: SourceAppInfo) {
     let _guard = CLIPBOARD_SYNC.lock().await;
 
     let mut clip_type = "text";
@@ -174,8 +181,8 @@ async fn process_clipboard_change(app: AppHandle, db: Arc<Database>) {
         }
     }
 
-    // capture source app info
-    let (source_app, source_icon, exe_name, full_path, is_explicit_owner) = get_clipboard_owner_app_info();
+    // Source app info was captured before debounce to ensure accuracy on macOS
+    let (source_app, source_icon, exe_name, full_path, is_explicit_owner) = source_app_info;
     log::info!("CLIPBOARD: Source app: {:?}, explicit: {}", source_app, is_explicit_owner);
 
     // Check ignore_ghost_clips setting
@@ -339,9 +346,48 @@ fn get_clipboard_owner_app_info() -> (Option<String>, Option<String>, Option<Str
     }
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "macos")]
 fn get_clipboard_owner_app_info() -> (Option<String>, Option<String>, Option<String>, Option<String>, bool) {
-    // On macOS/Linux, source app detection is not yet implemented
+    use objc2_app_kit::{NSWorkspace, NSBitmapImageRep, NSBitmapImageFileType};
+    use objc2_foundation::NSDictionary;
+
+    unsafe {
+        let workspace = NSWorkspace::sharedWorkspace();
+        let app = match workspace.frontmostApplication() {
+            Some(app) => app,
+            None => return (None, None, None, None, false),
+        };
+
+        let app_name = app.localizedName()
+            .map(|s| s.to_string());
+
+        let bundle_id = app.bundleIdentifier()
+            .map(|s| s.to_string());
+
+        // Extract app icon as base64 PNG
+        let app_icon = (|| -> Option<String> {
+            let bundle_url = app.bundleURL()?;
+            let path = bundle_url.path()?;
+            let icon = workspace.iconForFile(&path);
+
+            let tiff_data = icon.TIFFRepresentation()?;
+            let rep = NSBitmapImageRep::imageRepWithData(&tiff_data)?;
+            let empty_dict = NSDictionary::new();
+            let png_data = rep.representationUsingType_properties(
+                NSBitmapImageFileType::PNG,
+                &empty_dict,
+            )?;
+            let bytes = std::slice::from_raw_parts(png_data.bytes(), png_data.length());
+            Some(BASE64.encode(bytes))
+        })();
+
+        log::info!("CLIPBOARD: macOS source app: {:?}, bundle: {:?}", app_name, bundle_id);
+        (app_name, app_icon, bundle_id.clone(), bundle_id, true)
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn get_clipboard_owner_app_info() -> (Option<String>, Option<String>, Option<String>, Option<String>, bool) {
     (None, None, None, None, false)
 }
 
@@ -540,8 +586,37 @@ pub fn send_paste_input() {
     }
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "macos")]
 pub fn send_paste_input() {
-    // On macOS/Linux, auto-paste is not yet implemented
-    log::warn!("CLIPBOARD: send_paste_input not implemented on this platform");
+    use core_graphics::event::{CGEvent, CGEventFlags, CGKeyCode};
+    use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
+
+    log::info!("CLIPBOARD: macOS send_paste_input: sending Cmd+V");
+
+    let source = match CGEventSource::new(CGEventSourceStateID::HIDSystemState) {
+        Ok(s) => s,
+        Err(_) => {
+            log::error!("CLIPBOARD: Failed to create CGEventSource");
+            return;
+        }
+    };
+
+    let v_keycode: CGKeyCode = 9; // 'v' key on macOS
+
+    // Key down: Cmd+V
+    if let Ok(key_down) = CGEvent::new_keyboard_event(source.clone(), v_keycode, true) {
+        key_down.set_flags(CGEventFlags::CGEventFlagCommand);
+        key_down.post(core_graphics::event::CGEventTapLocation::HID);
+    }
+
+    // Key up: Cmd+V
+    if let Ok(key_up) = CGEvent::new_keyboard_event(source, v_keycode, false) {
+        key_up.set_flags(CGEventFlags::CGEventFlagCommand);
+        key_up.post(core_graphics::event::CGEventTapLocation::HID);
+    }
+}
+
+#[cfg(target_os = "linux")]
+pub fn send_paste_input() {
+    log::warn!("CLIPBOARD: send_paste_input not implemented on Linux");
 }

@@ -774,6 +774,13 @@ pub async fn register_global_shortcut(hotkey: String, window: tauri::WebviewWind
 }
 
 #[tauri::command]
+pub fn set_dragging(dragging: bool) {
+    use std::sync::atomic::Ordering;
+    crate::IS_DRAGGING.store(dragging, Ordering::SeqCst);
+    log::debug!("Dragging state set to: {}", dragging);
+}
+
+#[tauri::command]
 pub async fn focus_window(app: AppHandle, label: String) -> Result<(), String> {
     if let Some(window) = app.get_webview_window(&label) {
         if let Err(e) = window.unminimize() {

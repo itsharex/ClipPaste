@@ -20,6 +20,7 @@ use window_vibrancy::{switch_effect, apply_rounded_corners, clear_all_effects, E
 
 static IS_ANIMATING: AtomicBool = AtomicBool::new(false);
 static LAST_SHOW_TIME: AtomicI64 = AtomicI64::new(0);
+static IS_DRAGGING: AtomicBool = AtomicBool::new(false);
 
 /// RAII guard that resets IS_ANIMATING to false when dropped,
 /// ensuring the flag is always cleared even if the thread panics.
@@ -176,6 +177,10 @@ pub fn run_app() {
                                  // Safety checks:
                                  // 1. If we are already animating (e.g. hiding via hotkey), don't interfere.
                                  if IS_ANIMATING.load(Ordering::SeqCst) {
+                                     return;
+                                 }
+                                 // 1b. If user is dragging a clip to an external app, don't hide.
+                                 if IS_DRAGGING.load(Ordering::SeqCst) {
                                      return;
                                  }
                                  // 2. If the window is not visible (e.g. just hidden programmatically), don't try to move/show it.
@@ -387,7 +392,8 @@ pub fn run_app() {
             commands::pick_folder,
             commands::reorder_folders,
             commands::toggle_pin,
-            commands::paste_text
+            commands::paste_text,
+            commands::set_dragging
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

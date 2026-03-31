@@ -359,6 +359,16 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
               }}
               onMouseEnter={() => handleMouseEnter(cat.id)}
               onMouseLeave={handleMouseLeave}
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                onDragHover(cat.id);
+              }}
+              onDragLeave={() => onDragLeave()}
+              onDrop={(e) => {
+                e.preventDefault();
+                // Drop is handled by App.tsx finishDrag via dragStateRef
+              }}
               onContextMenu={(e) => {
                 if (onFolderContextMenu && cat.id) {
                   onFolderContextMenu(e, cat.id);

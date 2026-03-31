@@ -14,7 +14,7 @@ interface ClipListProps {
   showPin?: boolean;
   onLoadMore: () => void;
   resetScrollKey?: number;
-  onDragStart: (clipId: string, startX: number, startY: number) => void;
+  onNativeDragStart?: (e: React.DragEvent, clip: ClipboardItem) => void;
   onCardContextMenu?: (e: React.MouseEvent, clipId: string) => void;
   isPreviewing?: boolean;
 }
@@ -31,7 +31,7 @@ export function ClipList({
   showPin,
   onLoadMore,
   resetScrollKey,
-  onDragStart,
+  onNativeDragStart,
   onCardContextMenu,
   isPreviewing,
 }: ClipListProps) {
@@ -125,7 +125,7 @@ export function ClipList({
           onCopy={() => onCopy(clip.id)}
           onPin={() => onPin(clip.id)}
           showPin={showPin}
-          onDragStart={onDragStart}
+          onNativeDragStart={onNativeDragStart}
           onContextMenu={(e: React.MouseEvent) => onCardContextMenu?.(e, clip.id)}
         />
       ))}

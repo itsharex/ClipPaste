@@ -11,6 +11,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.4.4] - 2026-03-31
+
+### Added
+- **macOS source app detection** — uses `NSWorkspace.frontmostApplication` to identify which app the user copied from, with app name and bundle ID
+- **macOS source app icon** — extracts app icon via `NSWorkspace.iconForFile` and converts to PNG base64 for display in clip cards
+- **macOS auto-paste (Cmd+V)** — uses `core-graphics` CGEvent to simulate Cmd+V after selecting a clip (requires Accessibility permission)
+- **Drag-copy to external apps** — drag any clip card out of the window to drop text/images into other applications (HTML5 Drag API, cross-platform)
+- **Drag-to-folder** — folder tabs now accept HTML5 drag drops in addition to the existing move workflow
+
+### Fixed
+- **Search state persisting on reopen** — fixed race condition where stale `searchQuery` closure caused old search results to flash when reopening the app via hotkey
+- **Source app capture timing** — clipboard owner info is now captured before the 150ms debounce (not after), preventing wrong app detection when user switches apps quickly
+
+### Changed
+- **Unified drag system** — replaced dual mouse-based + HTML5 drag with a single HTML5 Drag API system for both internal folder moves and external drag-copy
+- **Window auto-hide suppression** — app window stays visible during drag operations to external apps (`IS_DRAGGING` flag)
+
+---
+
 ## [1.4.3] - 2026-03-30
 
 ### Added

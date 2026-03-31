@@ -1,6 +1,6 @@
 import { ClipboardItem } from '../types';
 import { clsx } from 'clsx';
-import { useMemo, memo, useState } from 'react';
+import { useMemo, memo, useState, useRef } from 'react';
 import { LAYOUT, TOTAL_COLUMN_WIDTH, PREVIEW_CHAR_LIMIT } from '../constants';
 import { Copy, Check, Pin } from 'lucide-react';
 
@@ -12,7 +12,7 @@ interface ClipCardProps {
   onCopy: () => void;
   onPin: () => void;
   showPin?: boolean;
-  onDragStart: (clipId: string, startX: number, startY: number) => void;
+  onNativeDragStart?: (e: React.DragEvent, clip: ClipboardItem) => void;
   onContextMenu?: (e: React.MouseEvent) => void;
 }
 
@@ -24,7 +24,7 @@ export const ClipCard = memo(function ClipCard({
   onCopy,
   onPin,
   showPin,
-  onDragStart,
+  onNativeDragStart,
   onContextMenu,
 }: ClipCardProps) {
   const [copied, setCopied] = useState(false);
@@ -79,10 +79,35 @@ export const ClipCard = memo(function ClipCard({
 
   const headerColor = useMemo(() => getAppGradient(title), [title]);
 
-  const handleMouseDown = (e: React.MouseEvent) => {
-    // Only left click
-    if (e.button !== 0) return;
-    onDragStart(clip.id, e.clientX, e.clientY);
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  const handleNativeDragStart = (e: React.DragEvent) => {
+    // Set data for external drop targets (other apps)
+    if (clip.clip_type === 'image') {
+      try {
+        const byteChars = atob(clip.content);
+        const byteArray = new Uint8Array(byteChars.length);
+        for (let i = 0; i < byteChars.length; i++) {
+          byteArray[i] = byteChars.charCodeAt(i);
+        }
+        const blob = new Blob([byteArray], { type: 'image/png' });
+        const file = new File([blob], 'clipboard-image.png', { type: 'image/png' });
+        e.dataTransfer.items.add(file);
+      } catch {
+        e.dataTransfer.setData('text/plain', '[Image]');
+      }
+    } else {
+      e.dataTransfer.setData('text/plain', clip.content);
+    }
+    e.dataTransfer.effectAllowed = 'copyMove';
+
+    // Use the card itself as the drag ghost, offset to center on cursor
+    if (cardRef.current) {
+      const rect = cardRef.current.getBoundingClientRect();
+      e.dataTransfer.setDragImage(cardRef.current, e.clientX - rect.left, e.clientY - rect.top);
+    }
+
+    onNativeDragStart?.(e, clip);
   };
 
   const handleContextMenu = (e: React.MouseEvent) => {
@@ -100,7 +125,9 @@ export const ClipCard = memo(function ClipCard({
       className="flex-shrink-0"
     >
       <div
-        onMouseDown={handleMouseDown}
+        ref={cardRef}
+        draggable
+        onDragStart={handleNativeDragStart}
         onClick={onSelect}
         onDoubleClick={onPaste}
         onContextMenu={handleContextMenu}

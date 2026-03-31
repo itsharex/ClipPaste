@@ -6,7 +6,6 @@ import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { ClipboardItem as AppClipboardItem, FolderItem, Settings, ClipType } from './types';
 import { ClipList } from './components/ClipList';
 import { ControlBar } from './components/ControlBar';
-import { DragPreview } from './components/DragPreview';
 import { ContextMenu } from './components/ContextMenu';
 import { FolderModal } from './components/FolderModal';
 import { EditClipModal } from './components/EditClipModal';
@@ -39,23 +38,22 @@ function App() {
 
   // Simulated Drag State
   const [draggingClipId, setDraggingClipId] = useState<string | null>(null);
-  const [dragPosition, setDragPosition] = useState({ x: 0, y: 0 });
   const [dragTargetFolderId, setDragTargetFolderId] = useState<string | null>(null);
 
   // Add Folder Modal State
   const [showAddFolderModal, setShowAddFolderModal] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
 
-  // Using refs for event handlers to access latest state without re-attaching listeners
+  // Ref for drag state — used by HTML5 drag handlers to avoid stale closures
   const dragStateRef = useRef({
     isDragging: false,
     clipId: null as string | null,
     targetFolderId: null as string | null,
-    pendingDrag: null as { clipId: string; startX: number; startY: number } | null,
   });
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const isDeletingRef = useRef(false);
+  const isDraggingExternalRef = useRef(false);
   const clipsRef = useRef(clips);
   clipsRef.current = clips;
   const [windowFocusCount, setWindowFocusCount] = useState(0);
@@ -102,8 +100,8 @@ function App() {
       setContentTypeFilter(null);
       autoSelectFirstOnNextLoadRef.current = true;
       setWindowFocusCount((c) => c + 1);
-      // Force reload to ensure fresh data even if selectedFolder/searchQuery haven't changed
-      refreshCurrentFolderRef.current();
+      // Force reload with explicit empty query to avoid stale closure race condition
+      loadClipsRef.current(selectedFolderRef.current, false, '');
     });
     return () => {
       unlisten.then((f) => f());
@@ -216,6 +214,10 @@ function App() {
   // Stable ref so the clipboard listener never re-subscribes
   const refreshCurrentFolderRef = useRef(refreshCurrentFolder);
   refreshCurrentFolderRef.current = refreshCurrentFolder;
+
+  // Stable ref for loadClips — used in focus handler to bypass stale closures
+  const loadClipsRef = useRef(loadClips);
+  loadClipsRef.current = loadClips;
   const debouncedFolderRefreshRef = useRef<() => void>(() => {});
 
   const [searchInput, setSearchInput] = useState('');
@@ -240,93 +242,8 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedFolder, searchQuery]);
 
-  // Handle global mouse events for simulated drag
-  useEffect(() => {
-    const handleGlobalMouseMove = (e: MouseEvent) => {
-      const state = dragStateRef.current;
-
-      // If we are already dragging, update position
-      if (state.isDragging) {
-        setDragPosition({ x: e.clientX, y: e.clientY });
-        return;
-      }
-
-      // If we have a pending drag, check threshold
-      if (state.pendingDrag) {
-        const dx = e.clientX - state.pendingDrag.startX;
-        const dy = e.clientY - state.pendingDrag.startY;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-
-        if (dist > 5) {
-          // Start actual drag
-          setDraggingClipId(state.pendingDrag.clipId);
-          setDragPosition({ x: e.clientX, y: e.clientY });
-          dragStateRef.current.isDragging = true;
-          dragStateRef.current.clipId = state.pendingDrag.clipId;
-          dragStateRef.current.pendingDrag = null;
-        }
-      }
-    };
-
-    const handleGlobalMouseUp = (_: MouseEvent) => {
-      // Always clear pending drag on mouse up
-      if (dragStateRef.current.pendingDrag) {
-        dragStateRef.current.pendingDrag = null;
-      }
-
-      if (dragStateRef.current.isDragging) {
-        finishDrag();
-      }
-    };
-
-    window.addEventListener('mousemove', handleGlobalMouseMove);
-    window.addEventListener('mouseup', handleGlobalMouseUp);
-
-    return () => {
-      window.removeEventListener('mousemove', handleGlobalMouseMove);
-      window.removeEventListener('mouseup', handleGlobalMouseUp);
-    };
-  }, []);
-
-  const startDrag = (clipId: string, startX: number, startY: number) => {
-    // Instead of starting immediately, set pending
-    dragStateRef.current.pendingDrag = { clipId, startX, startY };
-    dragStateRef.current.clipId = clipId;
-    // We don't set state yet, avoiding re-render until threshold passed
-  };
-
-  const finishDrag = () => {
-    if (dragStateRef.current.targetFolderId !== undefined && dragStateRef.current.clipId) {
-      // We only move if targetFolderId was explicitly set by a hover event.
-      // Wait, how do we distinguish "Not Hovering" vs "Hovering 'All' (null)"?
-      // We will make ControlBar pass a specific sentinel for "No Target" when leaving?
-      // Or simply: ControlBar tracks hover. If hover, it calls setDragTargetFolderId.
-      // If we drop and dragTargetFolderId is valid, we move.
-      // BUT 'null' is a valid folder ID (All).
-      // Let's use a generic 'undefined' for "No Target".
-    }
-
-    // Actually, simpler:
-    // When MouseUp happens, we check dragTargetFolderId state.
-    // If it is NOT undefined, we execute move.
-
-    // IMPORTANT: State updates in React are async. accessing `dragTargetFolderId` state inside event listener might be stale?
-    // That's why we use `dragStateRef`.
-
-    const { clipId, targetFolderId } = dragStateRef.current;
-    if (clipId && targetFolderId !== undefined && targetFolderId !== 'NO_TARGET') {
-      handleMoveClip(clipId, targetFolderId);
-    }
-
-    setDraggingClipId(null);
-    setDragTargetFolderId(null);
-    dragStateRef.current = {
-      isDragging: false,
-      clipId: null,
-      targetFolderId: 'NO_TARGET',
-      pendingDrag: null,
-    };
-  };
+  // === Unified HTML5 Drag System ===
+  // Handles both internal folder moves AND external drag-copy to other apps.
 
   const handleDragHover = (folderId: string | null) => {
     setDragTargetFolderId(folderId);
@@ -337,6 +254,33 @@ function App() {
     setDragTargetFolderId(null);
     dragStateRef.current.targetFolderId = 'NO_TARGET';
   };
+
+  const handleNativeDragStart = useCallback((_e: React.DragEvent, clip: AppClipboardItem) => {
+    isDraggingExternalRef.current = true;
+    invoke('set_dragging', { dragging: true }).catch(console.error);
+    setDraggingClipId(clip.id);
+    dragStateRef.current.isDragging = true;
+    dragStateRef.current.clipId = clip.id;
+  }, []);
+
+  const handleNativeDragEnd = useCallback(() => {
+    // Check if we dropped on a folder target
+    const { clipId, targetFolderId } = dragStateRef.current;
+    if (clipId && targetFolderId !== undefined && targetFolderId !== 'NO_TARGET') {
+      handleMoveClip(clipId, targetFolderId);
+    }
+
+    isDraggingExternalRef.current = false;
+    invoke('set_dragging', { dragging: false }).catch(console.error);
+    setDraggingClipId(null);
+    setDragTargetFolderId(null);
+    dragStateRef.current = {
+      isDragging: false,
+      clipId: null,
+      targetFolderId: 'NO_TARGET',
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Total History Count
   const [totalClipCount, setTotalClipCount] = useState(0);
@@ -750,7 +694,7 @@ function App() {
   };
 
   return (
-    <div className="relative h-screen w-full overflow-hidden">
+    <div className="relative h-screen w-full overflow-hidden" onDragEnd={handleNativeDragEnd}>
       {/*
       Background Layer with Blur:
       The Limitation: Standard CSS backdrop-filter:
@@ -769,16 +713,6 @@ function App() {
       {/* Content Container */}
       <div className="relative h-full w-full" style={{ padding: `${LAYOUT.WINDOW_PADDING}px` }}>
         <div className="flex h-full w-full flex-col overflow-hidden rounded-[12px] border border-border/10 bg-background/80 text-foreground shadow-[0_4px_32px_rgba(0,0,0,0.15)] dark:shadow-[0_4px_32px_rgba(0,0,0,0.5)]">
-          {draggingClipId && (() => {
-            const dragClip = clips.find((c) => c.id === draggingClipId);
-            return dragClip ? (
-              <DragPreview
-                clip={dragClip}
-                position={dragPosition}
-              />
-            ) : null;
-          })()}
-
           {contextMenu && (
             <ContextMenu
               x={contextMenu.x}
@@ -899,7 +833,7 @@ function App() {
               onLoadMore={isPreviewing ? () => {} : loadMore}
               resetScrollKey={isPreviewing ? undefined : windowFocusCount}
               // Simulated Drag Props
-              onDragStart={startDrag}
+              onNativeDragStart={handleNativeDragStart}
               onCardContextMenu={(e, clipId) => handleContextMenu(e, 'card', clipId)}
               isPreviewing={isPreviewing}
             />
