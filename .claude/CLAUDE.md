@@ -9,13 +9,14 @@
 | Feature | Windows | macOS | Linux |
 |---------|---------|-------|-------|
 | Clipboard monitoring | ✅ | ✅ | ✅ |
-| Auto-paste (Shift+Insert) | ✅ | ❌ | ❌ |
-| Source app detection | ✅ (Win32 API) | ❌ | ❌ |
+| Auto-paste | ✅ (Shift+Insert) | ✅ (Cmd+V via CGEvent) | ❌ |
+| Source app detection | ✅ (Win32 API) | ✅ (NSWorkspace) | ❌ |
 | Source app icon | ✅ (Win32 API) | ❌ | ❌ |
+| Drag-copy to external apps | ✅ (HTML5 Drag) | ✅ (HTML5 Drag) | ✅ (HTML5 Drag) |
 | Window effects | Mica/Mica Alt/Clear | Vibrancy | ❌ |
 | File/folder picker | PowerShell | osascript | zenity |
 
-Windows-specific code (`windows` crate, Win32 API) is gated behind `#[cfg(target_os = "windows")]`. Non-Windows platforms get graceful fallbacks (no source app info, no auto-paste).
+Platform-specific code is gated behind `#[cfg(target_os = "...")]`. macOS auto-paste requires Accessibility permission. Source app info captured before clipboard debounce for accuracy.
 
 ## Tech Stack
 
@@ -92,14 +93,17 @@ register_global_shortcut, show_window, hide_window, focus_window
 add_ignored_app, remove_ignored_app, get_ignored_apps
 pick_file, pick_folder, get_layout_config
 get_data_directory, set_data_directory
+set_dragging, reorder_folders, toggle_pin, paste_text
 ```
 
 ## Core Flows
 
-1. **Clipboard monitoring**: `clipboard.rs::init()` → listens to `plugin:clipboard-x://clipboard_changed` → debounce 150ms → `process_clipboard_change()` → saves to DB → emits `clipboard-change` event
-2. **Paste clip**: Frontend invokes `paste_clip` → backend stops listener → writes clipboard → animates window hide → callback: `send_paste_input()` (Shift+Insert)
-3. **Window show/hide**: Slide animation from bottom of screen, 15 steps × 10ms. Monitor detected by cursor position (Windows Win32 API)
+1. **Clipboard monitoring**: `clipboard.rs::init()` → listens to `plugin:clipboard-x://clipboard_changed` → captures source app info immediately → debounce 150ms → `process_clipboard_change()` → saves to DB → emits `clipboard-change` event
+2. **Paste clip**: Frontend invokes `paste_clip` → backend stops listener → writes clipboard → animates window hide → callback: `send_paste_input()` (Shift+Insert on Windows, Cmd+V on macOS)
+3. **Window show/hide**: Slide animation from bottom of screen, 15 steps × 10ms. Monitor detected by cursor position (Windows Win32 API). `IS_DRAGGING` flag prevents auto-hide during external drag operations
 4. **Window effects (Windows)**: Mica / Mica Alt (Tabbed) / Clear, using `window-vibrancy` fork
+5. **Search**: Client-side pre-filter (instant) + backend LIKE query (skip image BLOBs, 2000-char text_preview). Debounce 80ms. Generation counter discards stale responses
+6. **Drag-copy**: HTML5 Drag API — cards are `draggable`, `dataTransfer` carries text/plain or image file. Works for both internal folder moves and external app drops
 
 ## Settings
 
@@ -131,7 +135,7 @@ pnpm format             # Prettier format frontend/src/**
 ## Important Notes
 
 - `WINDOW_HEIGHT` must stay in sync between `constants.rs` (330.0) and `constants.ts` (298) — the values differ because one is physical pixels (backend) and the other is logical pixels (frontend)
-- `auto_paste` uses Shift+Insert (not Ctrl+V) to avoid conflicts
+- `auto_paste` uses Shift+Insert on Windows (not Ctrl+V to avoid conflicts), Cmd+V via CGEvent on macOS (requires Accessibility permission)
 - Settings window (`label: 'settings'`) is a separate WebviewWindow, URL: `index.html?window=settings`
 - Clipboard dedup: uses SHA256 hash of content; if hash exists, bumps `created_at` (re-copy moves to top) and restores if soft-deleted
 - Paste a clip updates `last_pasted_at` only — does NOT bump `created_at`, so pasting never reorders the list
@@ -139,6 +143,7 @@ pnpm format             # Prettier format frontend/src/**
 - `ClipCard` has `data-clip-id={clip.id}` for DOM lookup; `ClipList` auto-scrolls selected card into view on `selectedClipId` change
 - `CLIPBOARD_SYNC` mutex: prevents conflicts between clipboard monitor and paste operations
 - `IS_ANIMATING` atomic flag: prevents race conditions during simultaneous show/hide
+- `IS_DRAGGING` atomic flag: prevents window auto-hide during HTML5 drag to external apps
 - Main window auto-hides on blur, unless the settings window is open
 - Tray icon: `src-tauri/icons/tray.png`
 - `bundle.publisher` in `tauri.conf.json` is set to `"Phieu-Tran"` — this controls the **Company** field shown in Windows Add/Remove Programs. Without it, Tauri extracts the middle segment of `identifier` (`me.xueshi.clipboard` → `xueshi`) as the publisher name
