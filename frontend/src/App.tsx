@@ -673,6 +673,17 @@ function App() {
     }
   }, []);
 
+  const handlePastePlainText = useCallback(async (clipId: string) => {
+    const clip = clipsRef.current.find((c) => c.id === clipId);
+    if (!clip || clip.clip_type === 'image') return;
+    try {
+      await invoke('paste_text', { content: clip.content });
+    } catch (error) {
+      console.error('Failed to paste as plain text:', error);
+      toast.error('Failed to paste');
+    }
+  }, []);
+
   const handleEditBeforePaste = useCallback((clipId: string) => {
     const clip = clipsRef.current.find((c) => c.id === clipId);
     if (clip && clip.clip_type !== 'image') {
@@ -769,7 +780,10 @@ function App() {
                         onClick: () => handleTogglePin(contextMenu.itemId),
                       }] : []),
                       ...(clips.find((c) => c.id === contextMenu.itemId)?.clip_type !== 'image'
-                        ? [{ label: 'Chỉnh sửa trước khi paste', onClick: () => handleEditBeforePaste(contextMenu.itemId) }]
+                        ? [
+                            { label: 'Paste as plain text', onClick: () => handlePastePlainText(contextMenu.itemId) },
+                            { label: 'Edit before paste', onClick: () => handleEditBeforePaste(contextMenu.itemId) },
+                          ]
                         : []),
                       {
                         label: clips.find((c) => c.id === contextMenu.itemId)?.note ? 'Edit note' : 'Add note',

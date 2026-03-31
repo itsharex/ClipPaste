@@ -11,6 +11,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.5.0] - 2026-04-01
+
+### Added
+- **Dashboard** — stats overview (total clips, today, images, folders), activity chart (7 days), top source apps, most pasted clips, storage info
+- **History Timeline** — browse clips by date with calendar picker, search within any day, click chart bars to navigate
+- **Paste as plain text** — right-click context menu option to strip formatting
+- **Export / Import backup** — zip archive (clipboard.db + images/), accessible from Settings
+- **Search relevance ranking** — exact substring matches appear before partial word matches
+- **Clip saved toast** — visual confirmation when clipboard captures a new clip
+- **Schema version tracking** — migration table prevents duplicate ALTER TABLE runs
+
+### Changed
+- **Hard delete** — clips are permanently removed (no soft delete bloat)
+- **SQLite DELETE journal mode** — reverted from WAL; data writes directly to .db file, no .db-wal/.db-shm files
+- **Timezone-aware queries** — dashboard and history use `localtime` for correct date grouping
+- **README rewritten** — architecture diagram, data flow, design decisions, updated feature list
+
+### Fixed
+- **Multi-word search** — "docker compose" now finds clips containing both words (AND logic)
+- **Date query timezone** — clips grouped by local date, not UTC
+- **Export/Import dialog** — PowerShell STA mode + spawn_blocking prevents UI freeze
+- **Image card visibility** — dark background + border for screenshots on dark theme
+- **Dashboard SQL** — fixed broken WHERE clauses from batch replace
+
+### Performance
+- **Composite index** — `idx_clips_deleted_created` on (is_deleted, created_at) for faster queries
+- **Startup cleanup** — purge legacy soft-deleted rows, enforce max_items, clean orphan images
+
+---
+
 ## [1.4.8] - 2026-03-31
 
 ### Added

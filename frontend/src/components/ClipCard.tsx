@@ -2,7 +2,7 @@ import { ClipboardItem } from '../types';
 import { clsx } from 'clsx';
 import { useMemo, memo, useState, useRef } from 'react';
 import { LAYOUT, TOTAL_COLUMN_WIDTH, PREVIEW_CHAR_LIMIT } from '../constants';
-import { Copy, Check, Pin, Link, Mail, Palette, FolderOpen, StickyNote } from 'lucide-react';
+import { Copy, Check, Pin, Link, Mail, Palette, FolderOpen, StickyNote, Image as ImageIcon } from 'lucide-react';
 
 interface ClipCardProps {
   clip: ClipboardItem;
@@ -52,12 +52,19 @@ export const ClipCard = memo(function ClipCard({
   const renderedContent = useMemo(() => {
     if (clip.clip_type === 'image') {
       return (
-        <div className="flex h-full w-full select-none items-center justify-center">
-          <img
-            src={`data:image/png;base64,${clip.content}`}
-            alt="Clipboard Image"
-            className="max-h-full max-w-full object-contain"
-          />
+        <div className="flex h-full w-full select-none items-center justify-center rounded-md bg-black/20 p-1">
+          {clip.content ? (
+            <img
+              src={`data:image/png;base64,${clip.content}`}
+              alt="Clipboard Image"
+              className="max-h-full max-w-full rounded object-contain shadow-md"
+            />
+          ) : (
+            <div className="flex flex-col items-center gap-1 text-muted-foreground/50">
+              <ImageIcon size={24} />
+              <span className="text-[10px]">Image</span>
+            </div>
+          )}
         </div>
       );
     }

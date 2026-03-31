@@ -27,7 +27,7 @@ pub async fn get_clips(filter_id: Option<String>, limit: i64, offset: i64, previ
             if let Some(numeric_id) = folder_id_num {
                 log::info!("Querying for folder_id: {}", numeric_id);
                 sqlx::query_as(r#"
-                    SELECT * FROM clips WHERE is_deleted = 0 AND folder_id = ?
+                    SELECT * FROM clips WHERE folder_id = ?
                     ORDER BY is_pinned DESC, created_at DESC LIMIT ? OFFSET ?
                 "#)
                 .bind(numeric_id)
@@ -42,7 +42,7 @@ pub async fn get_clips(filter_id: Option<String>, limit: i64, offset: i64, previ
         None => {
             log::info!("Querying for items, offset: {}, limit: {}", offset, limit);
             sqlx::query_as(r#"
-                SELECT * FROM clips WHERE is_deleted = 0
+                SELECT * FROM clips
                 ORDER BY created_at DESC LIMIT ? OFFSET ?
             "#)
             .bind(limit)
@@ -321,7 +321,7 @@ pub async fn delete_clip(id: String, hard_delete: bool, db: tauri::State<'_, Arc
         let _ = sqlx::query("DELETE FROM clips_fts WHERE uuid = ?")
             .bind(&id).execute(pool).await;
     } else {
-        sqlx::query(r#"UPDATE clips SET is_deleted = 1 WHERE uuid = ?"#)
+        sqlx::query(r#"DELETE FROM clips WHERE uuid = ?"#)
             .bind(&id)
             .execute(pool).await.map_err(|e| e.to_string())?;
     }
@@ -490,7 +490,7 @@ pub async fn search_clips(query: String, filter_id: Option<String>, limit: i64, 
             .collect()
     };
 
-    let clips: Vec<Clip> = if matched.is_empty() {
+    let mut clips: Vec<Clip> = if matched.is_empty() {
         Vec::new()
     } else {
         let placeholders: String = matched.iter().map(|_| "?").collect::<Vec<_>>().join(",");
@@ -499,8 +499,7 @@ pub async fn search_clips(query: String, filter_id: Option<String>, limit: i64, 
                     folder_id, is_deleted, source_app, source_icon, metadata,
                     created_at, last_accessed, last_pasted_at, is_pinned,
                     subtype, note, paste_count
-             FROM clips WHERE uuid IN ({})
-             ORDER BY created_at DESC",
+             FROM clips WHERE uuid IN ({})",
             placeholders
         );
         let mut q = sqlx::query_as::<_, Clip>(&sql);
@@ -509,6 +508,18 @@ pub async fn search_clips(query: String, filter_id: Option<String>, limit: i64, 
         }
         q.fetch_all(pool).await.map_err(|e| e.to_string())?
     };
+
+    // Sort by relevance: exact substring match first, then by created_at DESC
+    clips.sort_by(|a, b| {
+        let a_exact = a.text_preview.to_lowercase().contains(&query_lower);
+        let b_exact = b.text_preview.to_lowercase().contains(&query_lower);
+        let a_starts = a.text_preview.to_lowercase().starts_with(&query_lower);
+        let b_starts = b.text_preview.to_lowercase().starts_with(&query_lower);
+        // Priority: starts_with > contains exact query > created_at
+        b_starts.cmp(&a_starts)
+            .then(b_exact.cmp(&a_exact))
+            .then(b.created_at.cmp(&a.created_at))
+    });
 
     // Search results use text_preview instead of full content for speed.
     // Cards only display ~300 chars anyway. Full content loaded on paste.
@@ -561,7 +572,7 @@ pub async fn get_folders(db: tauri::State<'_, Arc<Database>>) -> Result<Vec<Fold
     let counts: Vec<(i64, i64)> = sqlx::query_as(r#"
         SELECT folder_id, COUNT(*) as count
         FROM clips
-        WHERE is_deleted = 0 AND folder_id IS NOT NULL
+        WHERE folder_id IS NOT NULL
         GROUP BY folder_id
     "#)
     .fetch_all(pool).await.map_err(|e| e.to_string())?;
@@ -762,7 +773,7 @@ pub fn test_log() -> Result<String, String> {
 pub async fn get_clipboard_history_size(db: tauri::State<'_, Arc<Database>>) -> Result<i64, String> {
     let pool = &db.pool;
 
-    let count: i64 = sqlx::query_scalar::<_, i64>(r#"SELECT COUNT(*) FROM clips WHERE is_deleted = 0"#)
+    let count: i64 = sqlx::query_scalar::<_, i64>(r#"SELECT COUNT(*) FROM clips"#)
         .fetch_one(pool).await.map_err(|e| e.to_string())?;
     Ok(count)
 }
@@ -772,7 +783,9 @@ pub async fn clear_clipboard_history(db: tauri::State<'_, Arc<Database>>) -> Res
     let pool = &db.pool;
 
     // Only delete soft-deleted clips that are NOT in any folder
-    sqlx::query(r#"DELETE FROM clips WHERE is_deleted = 1 AND folder_id IS NULL"#)
+    // No-op: soft delete no longer used, all deletes are hard deletes now
+    // Kept for API compatibility
+    sqlx::query(r#"SELECT 1"#)
         .execute(pool).await.map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -1190,15 +1203,155 @@ pub async fn set_data_directory(
 }
 
 #[tauri::command]
+pub async fn get_clips_by_date(date: String, search: Option<String>, db: tauri::State<'_, Arc<Database>>) -> Result<Vec<ClipboardItem>, String> {
+    let pool = &db.pool;
+
+    let clips: Vec<Clip> = if let Some(ref q) = search {
+        let like = format!("%{}%", q);
+        sqlx::query_as(
+            "SELECT * FROM clips WHERE date(created_at, 'localtime') = ? AND text_preview LIKE ?
+             ORDER BY created_at DESC LIMIT 100"
+        ).bind(&date).bind(&like)
+        .fetch_all(pool).await.map_err(|e| e.to_string())?
+    } else {
+        sqlx::query_as(
+            "SELECT * FROM clips WHERE date(created_at, 'localtime') = ?
+             ORDER BY created_at DESC LIMIT 100"
+        ).bind(&date)
+        .fetch_all(pool).await.map_err(|e| e.to_string())?
+    };
+
+    let items: Vec<ClipboardItem> = clips.iter().map(|clip| {
+        let content_str = if clip.clip_type == "image" {
+            let filename = String::from_utf8_lossy(&clip.content).to_string();
+            let image_path = db.images_dir.join(&filename);
+            match std::fs::read(&image_path) {
+                Ok(bytes) => BASE64.encode(&bytes),
+                Err(_) => String::new(),
+            }
+        } else {
+            String::from_utf8_lossy(&clip.content).to_string()
+        };
+
+        ClipboardItem {
+            id: clip.uuid.clone(),
+            clip_type: clip.clip_type.clone(),
+            content: content_str,
+            preview: clip.text_preview.clone(),
+            folder_id: clip.folder_id.map(|id| id.to_string()),
+            created_at: clip.created_at.to_rfc3339(),
+            source_app: clip.source_app.clone(),
+            source_icon: clip.source_icon.clone(),
+            metadata: clip.metadata.clone(),
+            is_pinned: clip.is_pinned,
+            subtype: clip.subtype.clone(),
+            note: clip.note.clone(),
+            paste_count: clip.paste_count,
+        }
+    }).collect();
+
+    Ok(items)
+}
+
+/// Get list of dates that have clips (for calendar highlighting)
+#[tauri::command]
+pub async fn get_clip_dates(db: tauri::State<'_, Arc<Database>>) -> Result<Vec<serde_json::Value>, String> {
+    let pool = &db.pool;
+    let dates: Vec<(String, i64)> = sqlx::query_as(
+        "SELECT date(created_at, 'localtime') as day, COUNT(*) as count FROM clips
+         GROUP BY date(created_at, 'localtime') ORDER BY day DESC LIMIT 365"
+    ).fetch_all(pool).await.map_err(|e| e.to_string())?;
+
+    Ok(dates.iter().map(|(day, count)| {
+        serde_json::json!({ "date": day, "count": count })
+    }).collect())
+}
+
+#[tauri::command]
+pub async fn get_dashboard_stats(db: tauri::State<'_, Arc<Database>>) -> Result<serde_json::Value, String> {
+    let pool = &db.pool;
+
+    // Total clips
+    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM clips")
+        .fetch_one(pool).await.map_err(|e| e.to_string())?;
+
+    // Today's clips
+    let today: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM clips WHERE date(created_at, 'localtime') = date('now', 'localtime')"
+    ).fetch_one(pool).await.map_err(|e| e.to_string())?;
+
+    // Image count
+    let images: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM clips WHERE clip_type = 'image'"
+    ).fetch_one(pool).await.map_err(|e| e.to_string())?;
+
+    // Folder count
+    let folders: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM folders")
+        .fetch_one(pool).await.map_err(|e| e.to_string())?;
+
+    // Clips per day (last 7 days)
+    let daily: Vec<(String, i64)> = sqlx::query_as(
+        "SELECT date(created_at, 'localtime') as day, COUNT(*) as count
+         FROM clips WHERE date(created_at, 'localtime') >= date('now', 'localtime', '-6 days')
+         GROUP BY date(created_at, 'localtime') ORDER BY day ASC"
+    ).fetch_all(pool).await.map_err(|e| e.to_string())?;
+
+    // Top source apps (top 5)
+    let top_apps: Vec<(String, i64)> = sqlx::query_as(
+        "SELECT COALESCE(source_app, 'Unknown') as app, COUNT(*) as count
+         FROM clips WHERE source_app IS NOT NULL
+         GROUP BY source_app ORDER BY count DESC LIMIT 5"
+    ).fetch_all(pool).await.map_err(|e| e.to_string())?;
+
+    // Most pasted clips (top 5)
+    let most_pasted: Vec<(String, String, i64)> = sqlx::query_as(
+        "SELECT uuid, SUBSTR(text_preview, 1, 80), paste_count
+         FROM clips WHERE paste_count > 0
+         ORDER BY paste_count DESC LIMIT 5"
+    ).fetch_all(pool).await.map_err(|e| e.to_string())?;
+
+    // DB file size
+    let db_path = db.images_dir.parent().unwrap().join("clipboard.db");
+    let db_size = std::fs::metadata(&db_path).map(|m| m.len()).unwrap_or(0);
+
+    // Images dir size
+    let mut images_size: u64 = 0;
+    if let Ok(entries) = std::fs::read_dir(&db.images_dir) {
+        for entry in entries.flatten() {
+            images_size += entry.metadata().map(|m| m.len()).unwrap_or(0);
+        }
+    }
+
+    Ok(serde_json::json!({
+        "total": total,
+        "today": today,
+        "images": images,
+        "folders": folders,
+        "daily": daily.iter().map(|(day, count)| {
+            serde_json::json!({ "day": day, "count": count })
+        }).collect::<Vec<_>>(),
+        "top_apps": top_apps.iter().map(|(app, count)| {
+            serde_json::json!({ "app": app, "count": count })
+        }).collect::<Vec<_>>(),
+        "most_pasted": most_pasted.iter().map(|(uuid, preview, count)| {
+            serde_json::json!({ "id": uuid, "preview": preview, "count": count })
+        }).collect::<Vec<_>>(),
+        "db_size": db_size,
+        "images_size": images_size,
+    }))
+}
+
+#[tauri::command]
 pub async fn export_data(app: AppHandle, db: tauri::State<'_, Arc<Database>>) -> Result<String, String> {
-    // Let user pick save location
+    // Let user pick save location (spawn blocking to avoid Tokio stall)
     #[cfg(target_os = "windows")]
     let save_path = {
-        let ps_script = r#"Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.SaveFileDialog; $d.Filter = 'Zip Archive (*.zip)|*.zip'; $d.FileName = 'ClipPaste-backup.zip'; $null = $d.ShowDialog(); $d.FileName"#;
-        let output = std::process::Command::new("powershell")
-            .args(["-NoProfile", "-Command", ps_script])
-            .output()
-            .map_err(|e| e.to_string())?;
+        let ps_script = r#"Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.SaveFileDialog; $f.Filter = 'Zip Archive (*.zip)|*.zip'; $f.FileName = 'ClipPaste-backup.zip'; if ($f.ShowDialog() -eq 'OK') { $f.FileName } else { '' }"#;
+        let output = tokio::task::spawn_blocking(move || {
+            std::process::Command::new("powershell")
+                .args(["-NoProfile", "-STA", "-Command", ps_script])
+                .output()
+        }).await.map_err(|e| e.to_string())?.map_err(|e| e.to_string())?;
         let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
         if path.is_empty() { return Err("Export cancelled".to_string()); }
         path
@@ -1271,14 +1424,15 @@ pub async fn export_data(app: AppHandle, db: tauri::State<'_, Arc<Database>>) ->
 
 #[tauri::command]
 pub async fn import_data(app: AppHandle, db: tauri::State<'_, Arc<Database>>) -> Result<(), String> {
-    // Let user pick zip file
+    // Let user pick zip file (spawn blocking to avoid Tokio stall)
     #[cfg(target_os = "windows")]
     let zip_path = {
-        let ps_script = r#"Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.OpenFileDialog; $d.Filter = 'Zip Archive (*.zip)|*.zip'; $null = $d.ShowDialog(); $d.FileName"#;
-        let output = std::process::Command::new("powershell")
-            .args(["-NoProfile", "-Command", ps_script])
-            .output()
-            .map_err(|e| e.to_string())?;
+        let ps_script = r#"Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.OpenFileDialog; $f.Filter = 'Zip Archive (*.zip)|*.zip'; if ($f.ShowDialog() -eq 'OK') { $f.FileName } else { '' }"#;
+        let output = tokio::task::spawn_blocking(move || {
+            std::process::Command::new("powershell")
+                .args(["-NoProfile", "-STA", "-Command", ps_script])
+                .output()
+        }).await.map_err(|e| e.to_string())?.map_err(|e| e.to_string())?;
         let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
         if path.is_empty() { return Err("Import cancelled".to_string()); }
         path

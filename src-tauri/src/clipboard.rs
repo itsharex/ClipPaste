@@ -53,7 +53,7 @@ static DEBOUNCE_COUNTER: AtomicU64 = AtomicU64::new(0);
 /// Load all clip previews into memory for instant search
 pub async fn load_search_cache(pool: &sqlx::SqlitePool) {
     let rows: Vec<(String, String, Option<i64>)> = sqlx::query_as(
-        "SELECT uuid, COALESCE(text_preview, ''), folder_id FROM clips WHERE is_deleted = 0"
+        "SELECT uuid, COALESCE(text_preview, ''), folder_id FROM clips"
     ).fetch_all(pool).await.unwrap_or_default();
 
     let entries: Vec<(String, String, Option<i64>)> = rows.into_iter()
@@ -321,7 +321,7 @@ async fn process_clipboard_change(app: AppHandle, db: Arc<Database>, source_app_
 
     if let Some(existing_id) = existing_uuid {
         // Bump created_at so re-copied clip moves back to top of the list
-        if let Err(e) = sqlx::query(r#"UPDATE clips SET created_at = CURRENT_TIMESTAMP, is_deleted = 0 WHERE uuid = ?"#)
+        if let Err(e) = sqlx::query(r#"UPDATE clips SET created_at = CURRENT_TIMESTAMP WHERE uuid = ?"#)
             .bind(&existing_id)
             .execute(pool)
             .await

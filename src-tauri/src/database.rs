@@ -23,6 +23,20 @@ impl Database {
         Self { pool, images_dir }
     }
 
+    async fn get_schema_version(&self) -> i64 {
+        // Create version table if not exists
+        let _ = sqlx::query("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)")
+            .execute(&self.pool).await;
+        sqlx::query_scalar::<_, i64>("SELECT COALESCE(MAX(version), 0) FROM schema_version")
+            .fetch_one(&self.pool).await.unwrap_or(0)
+    }
+
+    async fn set_schema_version(&self, version: i64) {
+        let _ = sqlx::query("DELETE FROM schema_version").execute(&self.pool).await;
+        let _ = sqlx::query("INSERT INTO schema_version (version) VALUES (?)")
+            .bind(version).execute(&self.pool).await;
+    }
+
     pub async fn migrate(&self) -> Result<(), sqlx::Error> {
         sqlx::query(r#"
             CREATE TABLE IF NOT EXISTS folders (
@@ -66,6 +80,10 @@ impl Database {
         "#).execute(&self.pool).await?;
 
         sqlx::query(r#"
+            CREATE INDEX IF NOT EXISTS idx_clips_deleted_created ON clips(is_deleted, created_at);
+        "#).execute(&self.pool).await?;
+
+        sqlx::query(r#"
             CREATE TABLE IF NOT EXISTS settings (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
@@ -79,29 +97,37 @@ impl Database {
             )
         "#).execute(&self.pool).await?;
 
-        // Add last_pasted_at column if it doesn't exist yet (safe to run multiple times)
-        let _ = sqlx::query("ALTER TABLE clips ADD COLUMN last_pasted_at DATETIME DEFAULT NULL")
-            .execute(&self.pool).await;
+        // === Version-tracked migrations ===
+        let version = self.get_schema_version().await;
 
-        // Add position column to folders if it doesn't exist yet (safe to run multiple times)
-        let _ = sqlx::query("ALTER TABLE folders ADD COLUMN position INTEGER DEFAULT 0")
-            .execute(&self.pool).await;
+        if version < 1 {
+            let _ = sqlx::query("ALTER TABLE clips ADD COLUMN last_pasted_at DATETIME DEFAULT NULL")
+                .execute(&self.pool).await;
+            let _ = sqlx::query("ALTER TABLE folders ADD COLUMN position INTEGER DEFAULT 0")
+                .execute(&self.pool).await;
+            let _ = sqlx::query("ALTER TABLE clips ADD COLUMN is_pinned INTEGER DEFAULT 0")
+                .execute(&self.pool).await;
+            self.set_schema_version(1).await;
+            log::info!("DB: Applied migration v1 (last_pasted_at, position, is_pinned)");
+        }
 
-        // Add is_pinned column to clips if it doesn't exist yet (safe to run multiple times)
-        let _ = sqlx::query("ALTER TABLE clips ADD COLUMN is_pinned INTEGER DEFAULT 0")
-            .execute(&self.pool).await;
+        if version < 2 {
+            let _ = sqlx::query("ALTER TABLE clips ADD COLUMN subtype TEXT DEFAULT NULL")
+                .execute(&self.pool).await;
+            let _ = sqlx::query("ALTER TABLE clips ADD COLUMN note TEXT DEFAULT NULL")
+                .execute(&self.pool).await;
+            let _ = sqlx::query("ALTER TABLE clips ADD COLUMN paste_count INTEGER DEFAULT 0")
+                .execute(&self.pool).await;
+            self.set_schema_version(2).await;
+            log::info!("DB: Applied migration v2 (subtype, note, paste_count)");
+        }
 
-        // Add subtype column (url, email, color, path)
-        let _ = sqlx::query("ALTER TABLE clips ADD COLUMN subtype TEXT DEFAULT NULL")
-            .execute(&self.pool).await;
-
-        // Add note column for user annotations
-        let _ = sqlx::query("ALTER TABLE clips ADD COLUMN note TEXT DEFAULT NULL")
-            .execute(&self.pool).await;
-
-        // Add paste_count column for usage tracking
-        let _ = sqlx::query("ALTER TABLE clips ADD COLUMN paste_count INTEGER DEFAULT 0")
-            .execute(&self.pool).await;
+        // Clean up legacy soft-deleted rows (hard delete now)
+        let cleaned: u64 = sqlx::query("DELETE FROM clips WHERE is_deleted = 1")
+            .execute(&self.pool).await.map(|r| r.rows_affected()).unwrap_or(0);
+        if cleaned > 0 {
+            log::info!("DB: Purged {} legacy soft-deleted clips", cleaned);
+        }
 
         // === Migrate image blobs to disk ===
         // Images previously stored as BLOBs in content column are now stored as files.
@@ -130,8 +156,7 @@ impl Database {
             sqlx::query(r#"
                 INSERT INTO clips_fts(uuid, text_content)
                 SELECT uuid, CAST(content AS TEXT) FROM clips
-                WHERE clip_type != 'image' AND is_deleted = 0
-            "#).execute(&self.pool).await?;
+                WHERE clip_type != 'image'             "#).execute(&self.pool).await?;
             log::info!("DB: FTS5 index populated.");
         }
 
@@ -162,7 +187,7 @@ impl Database {
             .and_then(|v: String| v.parse().ok())
             .unwrap_or(1000);
 
-        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM clips WHERE is_deleted = 0 AND folder_id IS NULL")
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM clips WHERE folder_id IS NULL")
             .fetch_one(&self.pool).await.unwrap_or(0);
 
         if count <= max_items { return; }
@@ -172,7 +197,7 @@ impl Database {
 
         // Get image filenames for clips about to be deleted
         let image_clips: Vec<(Vec<u8>,)> = sqlx::query_as(
-            "SELECT content FROM clips WHERE is_deleted = 0 AND folder_id IS NULL AND clip_type = 'image'
+            "SELECT content FROM clips WHERE folder_id IS NULL AND clip_type = 'image'
              ORDER BY created_at ASC LIMIT ?"
         ).bind(excess).fetch_all(&self.pool).await.unwrap_or_default();
 
@@ -185,7 +210,7 @@ impl Database {
         // Delete oldest non-folder clips
         let _ = sqlx::query(
             "DELETE FROM clips WHERE id IN (
-                SELECT id FROM clips WHERE is_deleted = 0 AND folder_id IS NULL
+                SELECT id FROM clips WHERE folder_id IS NULL
                 ORDER BY created_at ASC LIMIT ?
             )"
         ).bind(excess).execute(&self.pool).await;

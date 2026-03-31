@@ -17,7 +17,7 @@
 </p>
 
 <p align="center">
-    Built with <strong>Rust + Tauri + React + TypeScript</strong> — fast, private, and lightweight.
+    Built with <strong>Rust + Tauri v2 + React 18 + TypeScript</strong> — fast, private, and lightweight.
 </p>
 
 ---
@@ -36,24 +36,49 @@
 
 ## Features
 
+### Clipboard
+
 | | Feature | Description |
 |:---:|:---|:---|
-| 🔒 | **Private** | All data stored locally, never leaves your machine |
-| ⚡ | **Fast & Lightweight** | Built with Rust for native performance |
-| 📌 | **Per-Folder Pin** | Pin clips to the top — scoped to each folder individually |
+| 🔒 | **Private & Local** | All data stored locally — never leaves your machine |
+| ⚡ | **Fast & Lightweight** | Rust backend, ~50MB RAM, instant search |
+| 🔍 | **Smart Search** | Multi-word AND search with relevance ranking (exact match first) |
+| 🏷️ | **Content Detection** | Auto-detect URLs, emails, color codes, file paths — styled cards |
+| 📌 | **Per-Folder Pin** | Pin clips to the top within each folder |
 | ✏️ | **Edit Before Paste** | Modify text content before pasting |
-| 📁 | **Folders** | Organize clips into color-coded folders with drag & drop |
-| 👀 | **Hover Preview** | Hover a folder tab to preview its clips without switching |
-| 🔍 | **Unified Search** | Search filters both clips and folder tabs simultaneously |
-| 🎨 | **Themes & Effects** | Dark / Light / System with Mica, Mica Alt, and native rounded corners |
-| 🖥️ | **Multi-Monitor** | Window appears on the active display |
-| 🚫 | **Ignore Apps** | Exclude sensitive apps (password managers, etc.) |
-| ⌨️ | **Custom Hotkey** | Set your preferred shortcut (default: `Ctrl+Shift+V`) |
-| 🔄 | **Infinite Scroll** | Seamlessly browse unlimited history |
-| 🛡️ | **Smart Filtering** | Ignore "Ghost Copies" from other clipboard tools |
+| 📋 | **Paste as Plain Text** | Strip formatting and paste clean text |
+| 📝 | **Notes** | Add annotations to any clip |
+| 🖼️ | **Image on Disk** | Images stored as files, not in DB — keeps database small |
+
+### Organization
+
+| | Feature | Description |
+|:---:|:---|:---|
+| 📁 | **Folders** | Color-coded folders with drag & drop |
+| 👀 | **Hover Preview** | Preview folder contents without switching |
 | 🗂️ | **Folder Protection** | Folder items survive bulk clear operations |
-| 📂 | **Custom Data Dir** | Choose where to store your clipboard database |
-| 🔄 | **Auto-Update** | In-app update with download progress bar |
+| 🔢 | **Paste Count** | Track how many times each clip is pasted |
+
+### Dashboard & History
+
+| | Feature | Description |
+|:---:|:---|:---|
+| 📊 | **Dashboard** | Stats overview — total clips, today, images, folders |
+| 📅 | **History Timeline** | Browse clips by date with calendar picker |
+| 📈 | **Activity Chart** | Clips per day (last 7 days), clickable bars |
+| 🏆 | **Top Apps** | Most used source apps with visual bar chart |
+| 💾 | **Export / Import** | Backup & restore as zip (DB + images) |
+
+### Appearance & System
+
+| | Feature | Description |
+|:---:|:---|:---|
+| 🎨 | **Themes & Effects** | Dark / Light / System + Mica, Mica Alt effects |
+| 🖥️ | **Multi-Monitor** | Window appears on the active display |
+| 🚫 | **Ignore Apps** | Exclude password managers, banking apps, etc. |
+| ⌨️ | **Custom Hotkey** | Default: `Ctrl+Shift+V` |
+| 🔄 | **Auto-Update** | In-app update with progress bar |
+| 📂 | **Custom Data Dir** | Choose where to store your data |
 
 ---
 
@@ -69,25 +94,16 @@
 | **macOS** | Apple Silicon (M1+), Intel | `.dmg` |
 | **Linux** | x64 | `.deb`, `.AppImage`, `.rpm` |
 
-### Platform Notes
+### Platform Support
 
 | Feature | Windows | macOS | Linux |
 |:--------|:-------:|:-----:|:-----:|
 | Clipboard monitoring | ✅ | ✅ | ✅ |
-| Auto-paste | ✅ | ❌ | ❌ |
-| Source app detection | ✅ | ❌ | ❌ |
+| Auto-paste | ✅ (Shift+Insert) | ✅ (Cmd+V) | ❌ |
+| Source app detection | ✅ | ✅ | ❌ |
 | Source app icon | ✅ | ❌ | ❌ |
-| Window effects (Mica) | ✅ | Vibrancy | ❌ |
-| Auto-start | ✅ | ✅ | ✅ |
-| Custom hotkey | ✅ | ✅ | ✅ |
-
-> **macOS / Linux**: Core clipboard history works. Source app detection and auto-paste are Windows-only for now.
-
-### Security (Windows)
-
-Every release is scanned with [VirusTotal](https://www.virustotal.com/) (70+ antivirus engines). Some AI-based engines may flag the installer as a false positive because ClipPaste monitors the clipboard and sends keyboard input — behaviors shared with legitimate clipboard managers.
-
-> If your antivirus blocks ClipPaste, add it to your exclusion list or [report a false positive](https://www.virustotal.com/).
+| Window effects | Mica / Mica Alt | Vibrancy | ❌ |
+| Drag-copy to apps | ✅ | ✅ | ✅ |
 
 ---
 
@@ -106,15 +122,97 @@ Every release is scanned with [VirusTotal](https://www.virustotal.com/) (70+ ant
 
 ---
 
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        ClipPaste                            │
+├──────────────────────────┬──────────────────────────────────┤
+│     Frontend (React)     │       Backend (Rust/Tauri)       │
+│                          │                                  │
+│  ┌──────────────────┐    │    ┌─────────────────────────┐   │
+│  │    ControlBar     │    │    │     clipboard.rs         │   │
+│  │  Search + Folders │    │    │  Monitor → Debounce →   │   │
+│  └────────┬─────────┘    │    │  Detect Subtype → Save   │   │
+│           │              │    └──────────┬──────────────┘   │
+│  ┌────────▼─────────┐    │               │                  │
+│  │     ClipList      │    │    ┌──────────▼──────────────┐   │
+│  │  @tanstack/virtual│◄───┼────┤     commands.rs          │   │
+│  │  (horizontal)     │ IPC│    │  get_clips, search,     │   │
+│  └────────┬─────────┘    │    │  paste, delete, export   │   │
+│           │              │    └──────────┬──────────────┘   │
+│  ┌────────▼─────────┐    │               │                  │
+│  │     ClipCard      │    │    ┌──────────▼──────────────┐   │
+│  │  Subtype-aware    │    │    │     database.rs          │   │
+│  │  URL/Email/Color  │    │    │  SQLite (DELETE mode)    │   │
+│  └──────────────────┘    │    │  + Migration versioning  │   │
+│                          │    └──────────┬──────────────┘   │
+│  ┌──────────────────┐    │               │                  │
+│  │   SettingsPanel   │    │    ┌──────────▼──────────────┐   │
+│  │  Dashboard + Stats│    │    │     Storage              │   │
+│  │  History Timeline │    │    │  clipboard.db (text)     │   │
+│  └──────────────────┘    │    │  images/*.png (on disk)   │   │
+│                          │    └─────────────────────────┘   │
+└──────────────────────────┴──────────────────────────────────┘
+```
+
+### Data Flow
+
+```
+User copies text/image
+        │
+        ▼
+┌─────────────────┐     ┌──────────────────┐     ┌─────────────┐
+│ Clipboard Plugin │────▶│  clipboard.rs     │────▶│  SQLite DB   │
+│ (OS clipboard)   │     │  - debounce 150ms │     │  - text in DB│
+│                  │     │  - detect subtype │     │  - img on    │
+│                  │     │  - SHA256 dedup   │     │    disk      │
+└─────────────────┘     │  - source app info│     └──────┬──────┘
+                        └──────────┬────────┘            │
+                                   │                     │
+                                   ▼                     ▼
+                        ┌──────────────────┐     ┌─────────────┐
+                        │ emit event       │     │ Search cache │
+                        │ → frontend reload│     │ (in-memory)  │
+                        └──────────────────┘     └─────────────┘
+```
+
+### Storage Layout
+
+```
+{data_dir}/ClipPaste/
+├── clipboard.db           # SQLite (DELETE journal mode)
+└── images/                # Clipboard images
+    ├── {sha256}.png
+    └── ...
+```
+
+### Key Design Decisions
+
+| Decision | Reason |
+|:---------|:-------|
+| **SQLite DELETE mode** (not WAL) | Clipboard manager writes rarely — data safety > write speed |
+| **Images on disk** | DB stays small (~2MB), images in separate files |
+| **In-memory search cache** | Instant single-word search (<1ms for 1000+ clips) |
+| **Multi-word AND search** | "docker compose" matches clips containing both words |
+| **Relevance sorting** | Exact substring matches rank above partial word matches |
+| **Shift+Insert** for paste | Works in terminals (PowerShell, WSL) where Ctrl+V doesn't |
+| **@tanstack/react-virtual** | Horizontal virtual list — constant DOM count regardless of clip count |
+| **Hard delete** (no soft delete) | No DB bloat, no stale rows, simpler queries |
+| **Schema version tracking** | Migrations run once per version, skip if already applied |
+
+---
+
 ## Tech Stack
 
 | Layer | Technology |
 |:------|:-----------|
 | Framework | [Tauri v2](https://tauri.app/) |
 | Frontend | React 18 + TypeScript + Vite |
-| Styling | TailwindCSS v3 |
+| Styling | TailwindCSS v3 + tailwind-merge |
+| Virtual List | [@tanstack/react-virtual](https://tanstack.com/virtual) |
 | Backend | Rust (Tokio async runtime) |
-| Database | SQLite via sqlx |
+| Database | SQLite via [sqlx](https://github.com/launchbadge/sqlx) |
 | Window Effects | [window-vibrancy](https://github.com/Phieu-Tran/window-vibrancy) *(custom fork)* |
 
 ---
@@ -141,46 +239,10 @@ pnpm tauri dev
 
 # Production build
 pnpm tauri build
+
+# Run tests
+cd tests && npx vitest run
 ```
-
----
-
-## Application Exceptions
-
-ClipPaste can exclude specific apps from clipboard history — useful for password managers and banking apps.
-
-- **Settings → Ignored Applications** — browse for an executable or type its name
-- On Windows: matches by **executable name** (`notepad.exe`) or **full path** (`C:\Windows\System32\notepad.exe`)
-- Case-insensitive matching
-
----
-
-## Architecture
-
-```
-ClipPaste/
-├── src-tauri/              # Rust backend
-│   ├── src/
-│   │   ├── lib.rs          # Core logic, window animation, tray
-│   │   ├── clipboard.rs    # Clipboard monitoring & processing
-│   │   ├── database.rs     # SQLite pool + migrations
-│   │   ├── commands.rs     # All Tauri IPC commands
-│   │   └── models.rs       # Data models
-│   └── tauri.conf.json
-├── frontend/               # React frontend
-│   ├── src/
-│   │   ├── App.tsx         # Root component
-│   │   ├── components/     # ClipList, ClipCard, ControlBar...
-│   │   └── hooks/          # useKeyboard, useTheme
-└── README.md
-```
-
-### Design Decisions
-
-- **Hybrid Clipboard**: Frontend writes images via `navigator.clipboard.write` (stable on WebView2), backend handles text + database + paste trigger
-- **Shift+Insert** for pasting: works in terminals (PowerShell, WSL) where `Ctrl+V` sends a control character
-- **Flicker-free effects**: Uses [window-vibrancy](https://github.com/Phieu-Tran/window-vibrancy) `switch_effect()` to clear old + apply new DWM effect in one call
-- **Native rounded corners**: DWM `DWMWA_WINDOW_CORNER_PREFERENCE` on Windows 11
 
 ---
 

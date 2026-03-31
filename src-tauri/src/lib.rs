@@ -405,7 +405,10 @@ pub fn run_app() {
             commands::set_dragging,
             commands::update_note,
             commands::export_data,
-            commands::import_data
+            commands::import_data,
+            commands::get_dashboard_stats,
+            commands::get_clips_by_date,
+            commands::get_clip_dates
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
