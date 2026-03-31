@@ -368,8 +368,7 @@ fn get_clipboard_owner_app_info() -> (Option<String>, Option<String>, Option<Str
 
 #[cfg(target_os = "macos")]
 fn get_clipboard_owner_app_info() -> (Option<String>, Option<String>, Option<String>, Option<String>, bool) {
-    use objc2_app_kit::{NSWorkspace, NSBitmapImageRep, NSBitmapImageFileType};
-    use objc2_foundation::NSDictionary;
+    use objc2_app_kit::NSWorkspace;
 
     unsafe {
         let workspace = NSWorkspace::sharedWorkspace();
@@ -384,25 +383,11 @@ fn get_clipboard_owner_app_info() -> (Option<String>, Option<String>, Option<Str
         let bundle_id = app.bundleIdentifier()
             .map(|s| s.to_string());
 
-        // Extract app icon as base64 PNG
-        let app_icon = (|| -> Option<String> {
-            let bundle_url = app.bundleURL()?;
-            let path = bundle_url.path()?;
-            let icon = workspace.iconForFile(&path);
-
-            let tiff_data = icon.TIFFRepresentation()?;
-            let rep = NSBitmapImageRep::imageRepWithData(&tiff_data)?;
-            let empty_dict = NSDictionary::new();
-            let png_data = rep.representationUsingType_properties(
-                NSBitmapImageFileType::PNG,
-                &empty_dict,
-            )?;
-            let bytes = std::slice::from_raw_parts(png_data.bytes(), png_data.length());
-            Some(BASE64.encode(bytes))
-        })();
+        // Note: Icon extraction skipped due to objc2 version conflicts with window-vibrancy.
+        // App icon support for macOS can be added when dependencies are aligned.
 
         log::info!("CLIPBOARD: macOS source app: {:?}, bundle: {:?}", app_name, bundle_id);
-        (app_name, app_icon, bundle_id.clone(), bundle_id, true)
+        (app_name, None, bundle_id.clone(), bundle_id, true)
     }
 }
 

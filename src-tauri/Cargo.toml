@@ -43,8 +43,8 @@ window-vibrancy = { git = "https://github.com/Phieu-Tran/window-vibrancy.git", b
 window-vibrancy-macos = { package = "window-vibrancy", version = "0.5" }
 core-graphics = "0.24"
 objc2 = "0.6"
-objc2-foundation = { version = "0.3", features = ["NSString", "NSData", "NSDictionary"] }
-objc2-app-kit = { version = "0.3", features = ["NSWorkspace", "NSRunningApplication", "NSImage", "NSBitmapImageRep"] }
+objc2-foundation = { version = "0.3", features = ["NSString"] }
+objc2-app-kit = { version = "0.3", features = ["NSWorkspace", "NSRunningApplication"] }
 
 [features]
 default = ["custom-protocol"]
