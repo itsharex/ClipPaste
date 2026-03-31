@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.4.6] - 2026-03-31
+
+Version bump for auto-updater (v1.4.5 was re-tagged, users on old 1.4.5 wouldn't receive the hotfix).
+
+---
+
 ## [1.4.5] - 2026-03-31
 
 ### Fixed
