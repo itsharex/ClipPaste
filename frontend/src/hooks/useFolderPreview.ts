@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { ClipboardItem as AppClipboardItem, FolderItem } from '../types';
+import { PAGE_SIZE } from '../constants';
+
+const MAX_PREVIEW_CACHE_SIZE = 20;
 
 interface UseFolderPreviewOpts {
   clips: AppClipboardItem[];
@@ -51,12 +54,17 @@ export function useFolderPreview(opts: UseFolderPreviewOpts) {
     try {
       const data = await invoke<AppClipboardItem[]>('get_clips', {
         filterId: folderId,
-        limit: 20,
+        limit: PAGE_SIZE,
         offset: 0,
         previewOnly: false,
       });
       // Only apply if this is still the latest request
       if (requestId !== previewRequestIdRef.current) return;
+      // Evict oldest entry if cache exceeds limit
+      if (previewCacheRef.current.size >= MAX_PREVIEW_CACHE_SIZE) {
+        const firstKey = previewCacheRef.current.keys().next().value;
+        if (firstKey !== undefined) previewCacheRef.current.delete(firstKey);
+      }
       previewCacheRef.current.set(cacheKey, data);
       setPreviewClips(data);
     } catch (error) {

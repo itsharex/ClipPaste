@@ -4,6 +4,7 @@ import { useMemo, memo, useState, useRef, useEffect } from 'react';
 import { LAYOUT, TOTAL_COLUMN_WIDTH, PREVIEW_CHAR_LIMIT } from '../constants';
 import { Copy, Check, Pin, Link, Mail, Palette, FolderOpen, StickyNote, Image as ImageIcon, Folder } from 'lucide-react';
 import { formatDistanceToNowStrict } from 'date-fns';
+import { base64ToBlob } from '../utils';
 
 interface ClipCardProps {
   clip: ClipboardItem;
@@ -247,12 +248,7 @@ export const ClipCard = memo(function ClipCard({
     // Set data for external drop targets (other apps)
     if (clip.clip_type === 'image') {
       try {
-        const byteChars = atob(clip.content);
-        const byteArray = new Uint8Array(byteChars.length);
-        for (let i = 0; i < byteChars.length; i++) {
-          byteArray[i] = byteChars.charCodeAt(i);
-        }
-        const blob = new Blob([byteArray], { type: 'image/png' });
+        const blob = base64ToBlob(clip.content, 'image/png');
         const file = new File([blob], 'clipboard-image.png', { type: 'image/png' });
         e.dataTransfer.items.add(file);
       } catch {

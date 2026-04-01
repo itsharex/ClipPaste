@@ -36,10 +36,19 @@ use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
 use once_cell::sync::Lazy;
 
-// GLOBAL STATE: Store the hash of the clip we just pasted ourselves.
-// If the next clipboard change matches this hash, we ignore it (don't update timestamp).
-static IGNORE_HASH: Lazy<parking_lot::Mutex<Option<String>>> = Lazy::new(|| parking_lot::Mutex::new(None));
-static LAST_STABLE_HASH: Lazy<parking_lot::Mutex<Option<String>>> = Lazy::new(|| parking_lot::Mutex::new(None));
+// GLOBAL STATE: Combined clipboard hash tracking under a single lock to prevent race conditions.
+// - ignore_hash: hash of the clip we just pasted ourselves (skip re-capture)
+// - last_stable_hash: hash of the last processed clipboard content (dedup)
+struct ClipboardHashState {
+    ignore_hash: Option<String>,
+    last_stable_hash: Option<String>,
+}
+static HASH_STATE: Lazy<parking_lot::Mutex<ClipboardHashState>> = Lazy::new(|| {
+    parking_lot::Mutex::new(ClipboardHashState {
+        ignore_hash: None,
+        last_stable_hash: None,
+    })
+});
 pub static CLIPBOARD_SYNC: Lazy<Arc<tokio::sync::Mutex<()>>> = Lazy::new(|| Arc::new(tokio::sync::Mutex::new(())));
 
 /// In-memory search index: (uuid, preview_lowercase, folder_id)
@@ -163,13 +172,13 @@ pub fn detect_subtype(text: &str) -> Option<String> {
 }
 
 pub fn set_ignore_hash(hash: String) {
-    let mut lock = IGNORE_HASH.lock();
-    *lock = Some(hash);
+    let mut state = HASH_STATE.lock();
+    state.ignore_hash = Some(hash);
 }
 
 pub fn set_last_stable_hash(hash: String) {
-    let mut lock = LAST_STABLE_HASH.lock();
-    *lock = Some(hash);
+    let mut state = HASH_STATE.lock();
+    state.last_stable_hash = Some(hash);
 }
 
 pub fn init(app: &AppHandle, db: Arc<Database>) {
@@ -288,21 +297,16 @@ async fn process_clipboard_change(app: AppHandle, db: Arc<Database>, source_app_
         return;
     }
 
-    // Stable Hash Check
+    // Atomic hash check: dedup + self-paste detection under single lock
     {
-        let mut lock = LAST_STABLE_HASH.lock();
-        if let Some(ref last_hash) = *lock {
+        let mut state = HASH_STATE.lock();
+        if let Some(ref last_hash) = state.last_stable_hash {
             if last_hash == &clip_hash {
                 return;
             }
         }
-        *lock = Some(clip_hash.clone());
-    }
-
-    // Check ignore self-paste
-    {
-        let mut lock = IGNORE_HASH.lock();
-        if let Some(ignore_hash) = lock.take() {
+        state.last_stable_hash = Some(clip_hash.clone());
+        if let Some(ignore_hash) = state.ignore_hash.take() {
             if ignore_hash == clip_hash {
                 log::info!("CLIPBOARD: Detected self-paste, proceeding to update timestamp");
             }
@@ -618,6 +622,12 @@ unsafe fn extract_icon(path: &str) -> Option<String> {
 
     let width = bm.bmWidth;
     let height = if !icon_info.hbmColor.is_invalid() { bm.bmHeight } else { bm.bmHeight / 2 };
+
+    // Bounds check: reject zero/negative dimensions or unreasonably large icons (>1024px)
+    if width <= 0 || height <= 0 || width > 1024 || height > 1024 {
+        log::warn!("ICON: Invalid icon dimensions {}x{}, skipping", width, height);
+        return None;
+    }
 
     let screen_dc = GetDC(None);
     let mem_dc = CreateCompatibleDC(Some(screen_dc));

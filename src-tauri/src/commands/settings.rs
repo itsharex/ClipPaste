@@ -64,27 +64,33 @@ pub async fn save_settings(app: AppHandle, settings: serde_json::Value, db: taur
     let pool = &db.pool;
 
     if let Some(max_items) = settings.get("max_items").and_then(|v| v.as_i64()) {
+        let max_items = max_items.clamp(10, 100_000);
         sqlx::query(r#"INSERT OR REPLACE INTO settings (key, value) VALUES ('max_items', ?)"#)
             .bind(max_items.to_string())
             .execute(pool).await.ok();
     }
 
     if let Some(days) = settings.get("auto_delete_days").and_then(|v| v.as_i64()) {
+        let days = days.clamp(1, 3650);
         sqlx::query(r#"INSERT OR REPLACE INTO settings (key, value) VALUES ('auto_delete_days', ?)"#)
             .bind(days.to_string())
             .execute(pool).await.ok();
     }
 
     if let Some(theme) = settings.get("theme").and_then(|v| v.as_str()) {
-        sqlx::query(r#"INSERT OR REPLACE INTO settings (key, value) VALUES ('theme', ?)"#)
-            .bind(theme)
-            .execute(pool).await.ok();
+        if matches!(theme, "light" | "dark" | "system") {
+            sqlx::query(r#"INSERT OR REPLACE INTO settings (key, value) VALUES ('theme', ?)"#)
+                .bind(theme)
+                .execute(pool).await.ok();
+        }
     }
 
     if let Some(mica_effect) = settings.get("mica_effect").and_then(|v| v.as_str()) {
-        sqlx::query(r#"INSERT OR REPLACE INTO settings (key, value) VALUES ('mica_effect', ?)"#)
-            .bind(mica_effect)
-            .execute(pool).await.ok();
+        if matches!(mica_effect, "clear" | "mica" | "mica_alt") {
+            sqlx::query(r#"INSERT OR REPLACE INTO settings (key, value) VALUES ('mica_effect', ?)"#)
+                .bind(mica_effect)
+                .execute(pool).await.ok();
+        }
     }
 
     // Always re-apply window effect when theme or mica_effect might have changed
@@ -123,9 +129,14 @@ pub async fn save_settings(app: AppHandle, settings: serde_json::Value, db: taur
 
 
     if let Some(hotkey) = settings.get("hotkey").and_then(|v| v.as_str()) {
-        sqlx::query(r#"INSERT OR REPLACE INTO settings (key, value) VALUES ('hotkey', ?)"#)
-            .bind(hotkey)
-            .execute(pool).await.ok();
+        // Validate hotkey format before saving
+        if Shortcut::from_str(hotkey).is_ok() {
+            sqlx::query(r#"INSERT OR REPLACE INTO settings (key, value) VALUES ('hotkey', ?)"#)
+                .bind(hotkey)
+                .execute(pool).await.ok();
+        } else {
+            log::warn!("SETTINGS: Invalid hotkey format rejected: {}", hotkey);
+        }
     }
 
     if let Some(auto_paste) = settings.get("auto_paste").and_then(|v| v.as_bool()) {

@@ -2,6 +2,7 @@ import { useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { ClipboardItem as AppClipboardItem } from '../types';
 import { base64ToBlob } from '../utils';
+import { PAGE_SIZE } from '../constants';
 import { toast } from 'sonner';
 
 interface UseClipActionsOpts {
@@ -56,13 +57,13 @@ export function useClipActions(opts: UseClipActionsOpts) {
           data = await invoke<AppClipboardItem[]>('search_clips', {
             query: searchOverride,
             filterId: folderId,
-            limit: 20,
+            limit: PAGE_SIZE,
             offset: currentOffset,
           });
         } else {
           data = await invoke<AppClipboardItem[]>('get_clips', {
             filterId: folderId,
-            limit: 20,
+            limit: PAGE_SIZE,
             offset: currentOffset,
             previewOnly: false,
           });
@@ -83,7 +84,7 @@ export function useClipActions(opts: UseClipActionsOpts) {
           }
         }
 
-        setHasMore(data.length === 20);
+        setHasMore(data.length === PAGE_SIZE);
       } catch (error) {
         console.error('Failed to load clips:', error);
       } finally {

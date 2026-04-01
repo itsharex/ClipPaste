@@ -42,21 +42,23 @@ pub async fn get_folders(db: tauri::State<'_, Arc<Database>>) -> Result<Vec<Fold
 pub async fn create_folder(name: String, icon: Option<String>, color: Option<String>, db: tauri::State<'_, Arc<Database>>, window: tauri::WebviewWindow) -> Result<FolderItem, String> {
     let pool = &db.pool;
 
-    // Check if folder with same name exists (excluding system folders if we wanted, but name uniqueness is good generally)
-    let exists: Option<i64> = sqlx::query_scalar("SELECT 1 FROM folders WHERE name = ?")
-        .bind(&name)
-        .fetch_optional(pool).await.map_err(|e| e.to_string())?;
-
-    if exists.is_some() {
-        return Err("A folder with this name already exists".to_string());
-    }
-
-    let id = sqlx::query(r#"INSERT INTO folders (name, icon, color) VALUES (?, ?, ?)"#)
+    // Atomic insert — UNIQUE index on folders.name prevents duplicates without check-then-insert race
+    let result = sqlx::query(r#"INSERT INTO folders (name, icon, color) VALUES (?, ?, ?)"#)
         .bind(&name)
         .bind(icon.as_ref())
         .bind(color.as_ref())
-        .execute(pool).await.map_err(|e| e.to_string())?
-        .last_insert_rowid();
+        .execute(pool).await;
+
+    let id = match result {
+        Ok(r) => r.last_insert_rowid(),
+        Err(e) => {
+            let msg = e.to_string();
+            if msg.contains("UNIQUE constraint failed") {
+                return Err("A folder with this name already exists".to_string());
+            }
+            return Err(msg);
+        }
+    };
 
     let _ = window.emit("clipboard-change", ());
 
@@ -76,24 +78,27 @@ pub async fn delete_folder(id: String, db: tauri::State<'_, Arc<Database>>, wind
 
     let folder_id: i64 = id.parse().map_err(|_| "Invalid folder ID")?;
 
-    // Clean up image files for clips in this folder before deleting
+    // Collect image filenames before transaction (for filesystem cleanup after)
     let image_clips: Vec<(Vec<u8>,)> = sqlx::query_as(
         "SELECT content FROM clips WHERE folder_id = ? AND clip_type = 'image'"
     ).bind(folder_id).fetch_all(pool).await.map_err(|e| e.to_string())?;
+
+    // Atomic: delete clips + folder in a single transaction
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+    sqlx::query("DELETE FROM clips WHERE folder_id = ?")
+        .bind(folder_id)
+        .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+    sqlx::query("DELETE FROM folders WHERE id = ?")
+        .bind(folder_id)
+        .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+    tx.commit().await.map_err(|e| e.to_string())?;
+
+    // Clean up image files after successful DB transaction
     for (content,) in &image_clips {
         let filename = String::from_utf8_lossy(content).to_string();
         let image_path = db.images_dir.join(&filename);
         if image_path.exists() { let _ = std::fs::remove_file(&image_path); }
     }
-
-    // Hard-delete all clips in this folder first (user explicitly chose to delete the folder)
-    sqlx::query(r#"DELETE FROM clips WHERE folder_id = ?"#)
-        .bind(folder_id)
-        .execute(pool).await.map_err(|e| e.to_string())?;
-
-    sqlx::query(r#"DELETE FROM folders WHERE id = ?"#)
-        .bind(folder_id)
-        .execute(pool).await.map_err(|e| e.to_string())?;
 
     let _ = window.emit("clipboard-change", ());
     Ok(())

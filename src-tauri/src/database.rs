@@ -127,6 +127,13 @@ impl Database {
             log::info!("DB: Applied migration v2 (subtype, note, paste_count)");
         }
 
+        if version < 3 {
+            let _ = sqlx::query("CREATE UNIQUE INDEX IF NOT EXISTS idx_folders_name ON folders(name)")
+                .execute(&self.pool).await;
+            self.set_schema_version(3).await;
+            log::info!("DB: Applied migration v3 (unique folder names)");
+        }
+
         // Clean up legacy soft-deleted rows (hard delete now)
         let cleaned: u64 = sqlx::query("DELETE FROM clips WHERE is_deleted = 1")
             .execute(&self.pool).await.map(|r| r.rows_affected()).unwrap_or(0);
