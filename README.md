@@ -112,6 +112,7 @@
 | Shortcut | Action |
 |:---------|:-------|
 | `Ctrl+Shift+V` | Toggle window *(customizable)* |
+| `Ctrl+1` .. `Ctrl+9` | Quick-paste clip 1–9 |
 | `Ctrl+F` | Focus search bar |
 | `Escape` | Close window / Clear search |
 | `Enter` | Paste selected clip |
@@ -124,66 +125,137 @@
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                        ClipPaste                            │
-├──────────────────────────┬──────────────────────────────────┤
-│     Frontend (React)     │       Backend (Rust/Tauri)       │
-│                          │                                  │
-│  ┌──────────────────┐    │    ┌─────────────────────────┐   │
-│  │    ControlBar     │    │    │     clipboard.rs         │   │
-│  │  Search + Folders │    │    │  Monitor → Debounce →   │   │
-│  └────────┬─────────┘    │    │  Detect Subtype → Save   │   │
-│           │              │    └──────────┬──────────────┘   │
-│  ┌────────▼─────────┐    │               │                  │
-│  │     ClipList      │    │    ┌──────────▼──────────────┐   │
-│  │  @tanstack/virtual│◄───┼────┤     commands.rs          │   │
-│  │  (horizontal)     │ IPC│    │  get_clips, search,     │   │
-│  └────────┬─────────┘    │    │  paste, delete, export   │   │
-│           │              │    └──────────┬──────────────┘   │
-│  ┌────────▼─────────┐    │               │                  │
-│  │     ClipCard      │    │    ┌──────────▼──────────────┐   │
-│  │  Subtype-aware    │    │    │     database.rs          │   │
-│  │  URL/Email/Color  │    │    │  SQLite (DELETE mode)    │   │
-│  └──────────────────┘    │    │  + Migration versioning  │   │
-│                          │    └──────────┬──────────────┘   │
-│  ┌──────────────────┐    │               │                  │
-│  │   SettingsPanel   │    │    ┌──────────▼──────────────┐   │
-│  │  Dashboard + Stats│    │    │     Storage              │   │
-│  │  History Timeline │    │    │  clipboard.db (text)     │   │
-│  └──────────────────┘    │    │  images/*.png (on disk)   │   │
-│                          │    └─────────────────────────┘   │
-└──────────────────────────┴──────────────────────────────────┘
+### System Overview
+
+```mermaid
+graph TB
+    subgraph Frontend["Frontend (React 18 + TypeScript)"]
+        App["App.tsx<br/><i>Orchestrator</i>"]
+
+        subgraph Hooks["Custom Hooks"]
+            useClipActions["useClipActions<br/><small>load, paste, copy, delete, pin, note</small>"]
+            useFolderActions["useFolderActions<br/><small>CRUD, reorder, move clip</small>"]
+            useDragDrop["useDragDrop<br/><small>card → folder drag</small>"]
+            useFolderPreview["useFolderPreview<br/><small>hover preview + cache</small>"]
+            useKeyboard["useKeyboard<br/><small>Esc, Ctrl+F, Ctrl+1..9</small>"]
+        end
+
+        subgraph Components["UI Components"]
+            ControlBar["ControlBar<br/><small>search, folder tabs, filters</small>"]
+            ClipList["ClipList<br/><small>@tanstack/react-virtual</small>"]
+            ClipCard["ClipCard<br/><small>subtype badges, highlight, timestamp</small>"]
+            Settings["SettingsPanel<br/><small>GeneralTab / FoldersTab / DashboardTab</small>"]
+        end
+
+        App --> Hooks
+        App --> Components
+    end
+
+    subgraph Backend["Backend (Rust + Tauri v2)"]
+        subgraph Commands["commands/"]
+            clips["clips.rs<br/><small>get, paste, copy, delete, search, pin</small>"]
+            folders["folders.rs<br/><small>CRUD, reorder</small>"]
+            settings["settings.rs<br/><small>get/save, ignored apps, hotkey</small>"]
+            data["data.rs<br/><small>export, import, dashboard, timeline</small>"]
+            window["window.rs<br/><small>show, hide, focus, dragging</small>"]
+        end
+
+        clipboard["clipboard.rs<br/><small>monitor, debounce, dedup, subtype detect</small>"]
+        database["database.rs<br/><small>SQLite pool, migrations</small>"]
+        caches["In-Memory Caches<br/><small>SEARCH_CACHE, SETTINGS_CACHE, ICON_CACHE</small>"]
+    end
+
+    subgraph Storage["Storage (local disk)"]
+        db[("clipboard.db<br/><small>SQLite WAL</small>")]
+        images["images/<br/><small>{sha256}.png</small>"]
+    end
+
+    Components -- "invoke()" --> Commands
+    Commands --> database
+    clipboard --> database
+    clipboard --> caches
+    database --> db
+    database --> images
+
+    style Frontend fill:#1e293b,stroke:#3b82f6,color:#e2e8f0
+    style Backend fill:#1e293b,stroke:#f59e0b,color:#e2e8f0
+    style Storage fill:#1e293b,stroke:#10b981,color:#e2e8f0
+    style Hooks fill:#0f172a,stroke:#6366f1,color:#c7d2fe
+    style Components fill:#0f172a,stroke:#6366f1,color:#c7d2fe
+    style Commands fill:#0f172a,stroke:#d97706,color:#fde68a
 ```
 
-### Data Flow
+### Clipboard Data Flow
 
+```mermaid
+sequenceDiagram
+    participant OS as OS Clipboard
+    participant Plugin as tauri-plugin-clipboard-x
+    participant Monitor as clipboard.rs
+    participant Cache as SEARCH_CACHE
+    participant DB as SQLite
+    participant Disk as images/*.png
+    participant UI as React Frontend
+
+    OS->>Plugin: clipboard_changed event
+    Plugin->>Monitor: event listener fires
+    Note over Monitor: Capture source app<br/>BEFORE debounce
+    Monitor->>Monitor: Debounce 150ms
+    Monitor->>Monitor: SHA256 hash
+
+    alt Duplicate (hash exists)
+        Monitor->>DB: UPDATE created_at (bump to top)
+    else New clip
+        Monitor->>Monitor: Detect subtype (url/email/color/path)
+        alt Image
+            Monitor->>Disk: Save {hash}.png
+            Monitor->>DB: INSERT (filename in content)
+        else Text
+            Monitor->>DB: INSERT (text in content)
+        end
+        Monitor->>Cache: add_to_search_cache()
+    end
+
+    Monitor->>UI: emit("clipboard-change")
+    UI->>UI: Reload clip list + toast
 ```
-User copies text/image
-        │
-        ▼
-┌─────────────────┐     ┌──────────────────┐     ┌─────────────┐
-│ Clipboard Plugin │────▶│  clipboard.rs     │────▶│  SQLite DB   │
-│ (OS clipboard)   │     │  - debounce 150ms │     │  - text in DB│
-│                  │     │  - detect subtype │     │  - img on    │
-│                  │     │  - SHA256 dedup   │     │    disk      │
-└─────────────────┘     │  - source app info│     └──────┬──────┘
-                        └──────────┬────────┘            │
-                                   │                     │
-                                   ▼                     ▼
-                        ┌──────────────────┐     ┌─────────────┐
-                        │ emit event       │     │ Search cache │
-                        │ → frontend reload│     │ (in-memory)  │
-                        └──────────────────┘     └─────────────┘
+
+### Paste Flow
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant UI as React Frontend
+    participant Cmd as commands/clips.rs
+    participant OS as OS Clipboard
+    participant Target as Target App
+
+    User->>UI: Double-click / Enter / Ctrl+1..9
+    UI->>Cmd: invoke("paste_clip", id)
+    Cmd->>Cmd: Stop clipboard listener
+    Cmd->>OS: Write content to clipboard
+    Cmd->>Cmd: Set IGNORE_HASH (prevent self-capture)
+    Cmd->>Cmd: Restart listener
+    Cmd->>UI: animate_window_hide()
+    UI-->>Target: Shift+Insert (Win) / Cmd+V (Mac)
+    Note over UI,Target: 200ms delay before keystroke
+
+    Note over User,UI: Copy (no paste)
+    User->>UI: Click copy button
+    UI->>Cmd: invoke("copy_clip", id)
+    Cmd->>OS: Write to clipboard only
+    Note over UI: Window stays open
 ```
 
 ### Storage Layout
 
 ```
 {data_dir}/ClipPaste/
-├── clipboard.db           # SQLite (DELETE journal mode)
-└── images/                # Clipboard images
-    ├── {sha256}.png
+├── clipboard.db           # SQLite (WAL mode)
+├── clipboard.db-wal       # Write-Ahead Log (concurrent reads + writes)
+├── clipboard.db-shm       # Shared memory index for WAL
+└── images/                # Clipboard images (not in DB)
+    ├── {sha256}.png       # Deduplicated by content hash
     └── ...
 ```
 
@@ -191,15 +263,15 @@ User copies text/image
 
 | Decision | Reason |
 |:---------|:-------|
-| **SQLite DELETE mode** (not WAL) | Clipboard manager writes rarely — data safety > write speed |
+| **SQLite WAL mode** | Concurrent reads (UI) + writes (clipboard monitor) without blocking |
 | **Images on disk** | DB stays small (~2MB), images in separate files |
-| **In-memory search cache** | Instant single-word search (<1ms for 1000+ clips) |
-| **Multi-word AND search** | "docker compose" matches clips containing both words |
+| **In-memory search cache** | Instant multi-word search (<1ms for 1000+ clips) |
 | **Relevance sorting** | Exact substring matches rank above partial word matches |
 | **Shift+Insert** for paste | Works in terminals (PowerShell, WSL) where Ctrl+V doesn't |
 | **@tanstack/react-virtual** | Horizontal virtual list — constant DOM count regardless of clip count |
 | **Hard delete** (no soft delete) | No DB bloat, no stale rows, simpler queries |
-| **Schema version tracking** | Migrations run once per version, skip if already applied |
+| **Async image I/O** | `tokio::fs::read` prevents blocking the Tokio runtime |
+| **Modular commands/** | 7 domain files instead of monolithic commands.rs (1500+ lines) |
 
 ---
 
