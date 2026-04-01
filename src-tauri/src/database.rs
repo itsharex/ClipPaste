@@ -32,9 +32,14 @@ impl Database {
     }
 
     async fn set_schema_version(&self, version: i64) {
-        let _ = sqlx::query("DELETE FROM schema_version").execute(&self.pool).await;
-        let _ = sqlx::query("INSERT INTO schema_version (version) VALUES (?)")
-            .bind(version).execute(&self.pool).await;
+        if let Err(e) = sqlx::query("DELETE FROM schema_version").execute(&self.pool).await {
+            log::error!("Failed to clear schema_version table: {}", e);
+        }
+        if let Err(e) = sqlx::query("INSERT INTO schema_version (version) VALUES (?)")
+            .bind(version).execute(&self.pool).await
+        {
+            log::error!("Failed to set schema_version to {}: {}", version, e);
+        }
     }
 
     pub async fn migrate(&self) -> Result<(), sqlx::Error> {
@@ -134,32 +139,6 @@ impl Database {
         // content column will hold just the filename (e.g. "abc123.png").
         self.migrate_images_to_disk().await;
 
-        // === FTS5 Full-Text Search ===
-        // Create FTS5 virtual table for fast text search
-        sqlx::query(r#"
-            CREATE VIRTUAL TABLE IF NOT EXISTS clips_fts USING fts5(
-                uuid UNINDEXED,
-                text_content,
-                content=''
-            )
-        "#).execute(&self.pool).await?;
-
-        // Populate FTS5 from existing text clips (skip if already populated)
-        let fts_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM clips_fts")
-            .fetch_one(&self.pool).await.unwrap_or(0);
-        let clip_count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM clips WHERE clip_type != 'image' AND is_deleted = 0"
-        ).fetch_one(&self.pool).await.unwrap_or(0);
-
-        if fts_count == 0 && clip_count > 0 {
-            log::info!("DB: Populating FTS5 index from {} existing text clips...", clip_count);
-            sqlx::query(r#"
-                INSERT INTO clips_fts(uuid, text_content)
-                SELECT uuid, CAST(content AS TEXT) FROM clips
-                WHERE clip_type != 'image'             "#).execute(&self.pool).await?;
-            log::info!("DB: FTS5 index populated.");
-        }
-
         // Rebuild text_preview for existing clips that have short previews (< 500 chars)
         // This upgrades old 200-char previews to 2000-char previews
         let upgraded: u64 = sqlx::query(r#"
@@ -208,12 +187,14 @@ impl Database {
         }
 
         // Delete oldest non-folder clips
-        let _ = sqlx::query(
+        if let Err(e) = sqlx::query(
             "DELETE FROM clips WHERE id IN (
                 SELECT id FROM clips WHERE folder_id IS NULL
                 ORDER BY created_at ASC LIMIT ?
             )"
-        ).bind(excess).execute(&self.pool).await;
+        ).bind(excess).execute(&self.pool).await {
+            log::error!("Failed to trim excess clips: {}", e);
+        }
     }
 
     /// Clean up orphan image files (files in images/ that have no matching clip)
@@ -223,14 +204,15 @@ impl Database {
             Err(_) => return,
         };
 
+        // Load all image filenames from DB in one query
+        let db_files: std::collections::HashSet<String> = sqlx::query_scalar::<_, String>(
+            "SELECT CAST(content AS TEXT) FROM clips WHERE clip_type = 'image'"
+        ).fetch_all(&self.pool).await.unwrap_or_default().into_iter().collect();
+
         let mut orphans = 0u64;
         for entry in entries.flatten() {
             let filename = entry.file_name().to_string_lossy().to_string();
-            let exists: bool = sqlx::query_scalar::<_, i64>(
-                "SELECT COUNT(*) FROM clips WHERE clip_type = 'image' AND CAST(content AS TEXT) = ?"
-            ).bind(&filename).fetch_one(&self.pool).await.unwrap_or(0) > 0;
-
-            if !exists {
+            if !db_files.contains(&filename) {
                 let _ = std::fs::remove_file(entry.path());
                 orphans += 1;
             }

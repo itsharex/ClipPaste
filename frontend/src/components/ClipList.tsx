@@ -22,6 +22,9 @@ interface ClipListProps {
   isPreviewing?: boolean;
   isSearching?: boolean;
   isSearchPending?: boolean;
+  folderMap?: Record<string, string>;
+  selectedFolder?: string | null;
+  searchQuery?: string;
 }
 
 export function ClipList({
@@ -41,6 +44,9 @@ export function ClipList({
   isPreviewing,
   isSearching,
   isSearchPending,
+  folderMap,
+  selectedFolder,
+  searchQuery,
 }: ClipListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [staggerKey, setStaggerKey] = useState(0);
@@ -90,10 +96,13 @@ export function ClipList({
     }
   }, [hasMore, isLoading, onLoadMore]);
 
-  // Map vertical mouse wheel to horizontal scroll
+  // Map vertical mouse wheel to horizontal scroll — damped for control
   const handleWheel = useCallback((e: React.WheelEvent) => {
-    if (containerRef.current && e.deltaY !== 0) {
-      containerRef.current.scrollLeft += e.deltaY;
+    if (containerRef.current && (e.deltaY !== 0 || e.deltaX !== 0)) {
+      e.preventDefault();
+      // Dampen: ~1 card width per strong scroll notch
+      const delta = (e.deltaY || e.deltaX) * 0.6;
+      containerRef.current.scrollBy({ left: delta, behavior: 'auto' });
     }
   }, []);
 
@@ -109,9 +118,13 @@ export function ClipList({
       'from-green-500/40 to-emerald-400/40',
       'from-fuchsia-500/40 to-pink-400/40',
     ];
+    const skeletonCount = Math.min(
+      Math.ceil(window.innerWidth / TOTAL_COLUMN_WIDTH) + 1,
+      skeletonGradients.length
+    );
     return (
       <div className="no-scrollbar flex h-full w-full flex-1 items-center gap-4 overflow-x-auto overflow-y-hidden px-4">
-        {Array.from({ length: 8 }).map((_, i) => (
+        {Array.from({ length: skeletonCount }).map((_, i) => (
           <div
             key={i}
             className="animate-skeleton-in flex-shrink-0"
@@ -181,7 +194,7 @@ export function ClipList({
       className={`no-scrollbar flex h-full w-full flex-1 overflow-x-auto overflow-y-hidden${isPreviewing ? ' opacity-80' : ''}`}
       onScroll={handleScroll}
       onWheel={handleWheel}
-      style={{ scrollBehavior: 'auto' }}
+      style={{ scrollSnapType: 'x proximity' }}
     >
       {/* Virtual spacer — the full scrollable width */}
       <div
@@ -191,7 +204,7 @@ export function ClipList({
           minWidth: '100%',
         }}
       >
-        {virtualizer.getVirtualItems().map((virtualItem) => {
+        {virtualizer.getVirtualItems().map((virtualItem, viewIndex) => {
           const clip = clips[virtualItem.index];
           return (
             <div
@@ -202,7 +215,8 @@ export function ClipList({
                 left: virtualItem.start + LAYOUT.SIDE_PADDING,
                 width: virtualItem.size,
                 height: '100%',
-                ...(isSearching ? {} : { animationDelay: `${virtualItem.index * 30}ms` }),
+                scrollSnapAlign: 'start',
+                ...(isSearching ? {} : { animationDelay: `${viewIndex * 30}ms` }),
               }}
               data-stagger-key={staggerKey}
             >
@@ -214,8 +228,19 @@ export function ClipList({
                 onCopy={() => onCopy(clip.id)}
                 onPin={() => onPin(clip.id)}
                 showPin={showPin}
+                folderName={
+                  isSearching && folderMap && selectedFolder
+                    ? (clip.folder_id !== selectedFolder
+                        ? (clip.folder_id ? folderMap[clip.folder_id] : 'All')
+                        : null)
+                    : (isSearching && folderMap && !selectedFolder && clip.folder_id
+                        ? folderMap[clip.folder_id]
+                        : null)
+                }
                 onNativeDragStart={onNativeDragStart}
                 onContextMenu={(e: React.MouseEvent) => onCardContextMenu?.(e, clip.id)}
+                searchQuery={searchQuery}
+                index={virtualItem.index}
               />
             </div>
           );

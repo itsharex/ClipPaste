@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**ClipPaste** is a cross-platform clipboard history manager for **Windows, macOS, and Linux**, built with **Tauri v2** (Rust backend) + **React/TypeScript** (frontend). Package name: `clippaste`, version: `1.5.0`.
+**ClipPaste** is a cross-platform clipboard history manager for **Windows, macOS, and Linux**, built with **Tauri v2** (Rust backend) + **React/TypeScript** (frontend). Package name: `clippaste`, version: `1.6.0`.
 
 ### Platform Support
 
@@ -38,18 +38,26 @@ Platform-specific code is gated behind `#[cfg(target_os = "...")]`. macOS auto-p
 ```
 ClipPaste/
 ├── frontend/src/          # React frontend
-│   ├── App.tsx            # Root component, manages all state
+│   ├── App.tsx            # Root component, orchestrates hooks & components
 │   ├── components/        # UI components
 │   │   ├── ClipList.tsx   # Clipboard item list (virtual scroll)
-│   │   ├── ClipCard.tsx   # Card for each clip
+│   │   ├── ClipCard.tsx   # Card for each clip (search highlight, timestamp, index badge)
 │   │   ├── ControlBar.tsx # Control bar (search, folders, settings)
 │   │   ├── ContextMenu.tsx
 │   │   ├── FolderModal.tsx
 │   │   ├── SettingsPanel.tsx
-│   │   └── DragPreview.tsx
+│   │   └── settings/      # Settings tab components
+│   │       ├── GeneralTab.tsx
+│   │       ├── FoldersTab.tsx
+│   │       └── DashboardTab.tsx
 │   ├── hooks/
-│   │   ├── useKeyboard.ts # Keyboard shortcuts
-│   │   └── useTheme.ts    # Theme management
+│   │   ├── useKeyboard.ts    # Keyboard shortcuts (incl. Ctrl+1..9 quick-paste)
+│   │   ├── useTheme.ts       # Theme management
+│   │   ├── useClipActions.ts  # Clip CRUD, paste, copy, pin, note
+│   │   ├── useFolderActions.ts # Folder CRUD, reorder, move clip
+│   │   ├── useDragDrop.ts     # Drag-and-drop between folders
+│   │   └── useFolderPreview.ts # Folder hover preview with cache
+│   ├── utils.ts           # Shared helpers (base64ToBlob)
 │   ├── windows/
 │   │   └── SettingsWindow.tsx
 │   ├── types/index.ts     # TypeScript types
@@ -58,11 +66,20 @@ ClipPaste/
 ├── src-tauri/src/         # Rust backend
 │   ├── main.rs            # Entry point (calls run_app())
 │   ├── lib.rs             # run_app(), window animation, tray, hotkey setup
-│   ├── commands.rs        # All Tauri commands (invoke handlers)
-│   ├── clipboard.rs       # Clipboard monitoring & processing
+│   ├── commands/          # Tauri commands (split by domain)
+│   │   ├── mod.rs         # Re-exports all command modules
+│   │   ├── clips.rs       # get/paste/copy/delete/search/pin/note
+│   │   ├── folders.rs     # get/create/delete/rename/move/reorder
+│   │   ├── settings.rs    # get/save settings, ignored apps, hotkey, cleanup
+│   │   ├── data.rs        # export/import, dashboard, timeline, file/folder picker
+│   │   ├── window.rs      # show/hide/focus, dragging, ping
+│   │   └── helpers.rs     # clip_to_item_async, check_auto_paste_and_hide
+│   ├── clipboard.rs       # Clipboard monitoring, caches, platform-specific paste
 │   ├── database.rs        # SQLite pool + migrations
 │   ├── models.rs          # Rust structs (Clip, Folder, ClipboardItem, etc.)
-│   └── constants.rs       # WINDOW_HEIGHT=330.0, WINDOW_MARGIN=0.0
+│   ├── constants.rs       # WINDOW_HEIGHT=330.0, WINDOW_MARGIN=0.0
+│   ├── utils.rs           # Path helpers (config, data dir)
+│   └── tests.rs           # 47 unit + integration tests
 │
 └── src-tauri/
     ├── Cargo.toml         # Rust dependencies
@@ -85,7 +102,7 @@ ignored_apps (id, app_name UNIQUE)
 ## Tauri Commands (invoked from frontend)
 
 ```
-get_clips, get_clip, paste_clip, delete_clip, search_clips
+get_clips, get_clip, paste_clip, copy_clip, delete_clip, search_clips
 get_folders, create_folder, rename_folder, delete_folder, move_to_folder
 get_settings, save_settings
 get_clipboard_history_size, clear_clipboard_history, clear_all_clips, remove_duplicate_clips
@@ -94,6 +111,8 @@ add_ignored_app, remove_ignored_app, get_ignored_apps
 pick_file, pick_folder, get_layout_config
 get_data_directory, set_data_directory
 set_dragging, reorder_folders, toggle_pin, paste_text
+export_data, import_data, get_dashboard_stats, get_clips_by_date, get_clip_dates
+update_note
 ```
 
 ## Core Flows

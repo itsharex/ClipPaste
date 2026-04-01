@@ -1,9 +1,51 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { FolderItem, ClipType } from '../types';
 import { Search, Plus, MoreHorizontal, X, Layers, FileText, Image, Code, Type, File, Link } from 'lucide-react';
 import { clsx } from 'clsx';
 import { FOLDER_ICON_MAP } from './FolderModal';
 import { type LucideIcon } from 'lucide-react';
+
+const FOLDER_COLORS_LIGHT = [
+  { active: 'bg-red-600 text-white ring-2 ring-red-500/50 font-bold drop-shadow-sm', inactive: 'bg-red-400 text-white hover:bg-red-500 hover:text-white drop-shadow-sm' },
+  { active: 'bg-orange-600 text-white ring-2 ring-orange-500/50 font-bold drop-shadow-sm', inactive: 'bg-orange-400 text-white hover:bg-orange-500 hover:text-white drop-shadow-sm' },
+  { active: 'bg-amber-600 text-white ring-2 ring-amber-500/50 font-bold drop-shadow-sm', inactive: 'bg-amber-400 text-white hover:bg-amber-500 hover:text-white drop-shadow-sm' },
+  { active: 'bg-green-600 text-white ring-2 ring-green-500/50 font-bold drop-shadow-sm', inactive: 'bg-green-400 text-white hover:bg-green-500 hover:text-white drop-shadow-sm' },
+  { active: 'bg-emerald-600 text-white ring-2 ring-emerald-500/50 font-bold drop-shadow-sm', inactive: 'bg-emerald-400 text-white hover:bg-emerald-500 hover:text-white drop-shadow-sm' },
+  { active: 'bg-teal-600 text-white ring-2 ring-teal-500/50 font-bold drop-shadow-sm', inactive: 'bg-teal-400 text-white hover:bg-teal-500 hover:text-white drop-shadow-sm' },
+  { active: 'bg-cyan-600 text-white ring-2 ring-cyan-500/50 font-bold drop-shadow-sm', inactive: 'bg-cyan-400 text-white hover:bg-cyan-500 hover:text-white drop-shadow-sm' },
+  { active: 'bg-sky-600 text-white ring-2 ring-sky-500/50 font-bold drop-shadow-sm', inactive: 'bg-sky-400 text-white hover:bg-sky-500 hover:text-white drop-shadow-sm' },
+  { active: 'bg-blue-600 text-white ring-2 ring-blue-500/50 font-bold drop-shadow-sm', inactive: 'bg-blue-400 text-white hover:bg-blue-500 hover:text-white drop-shadow-sm' },
+  { active: 'bg-indigo-600 text-white ring-2 ring-indigo-500/50 font-bold drop-shadow-sm', inactive: 'bg-indigo-400 text-white hover:bg-indigo-500 hover:text-white drop-shadow-sm' },
+  { active: 'bg-violet-600 text-white ring-2 ring-violet-500/50 font-bold drop-shadow-sm', inactive: 'bg-violet-400 text-white hover:bg-violet-500 hover:text-white drop-shadow-sm' },
+  { active: 'bg-purple-600 text-white ring-2 ring-purple-500/50 font-bold drop-shadow-sm', inactive: 'bg-purple-400 text-white hover:bg-purple-500 hover:text-white drop-shadow-sm' },
+  { active: 'bg-fuchsia-600 text-white ring-2 ring-fuchsia-500/50 font-bold drop-shadow-sm', inactive: 'bg-fuchsia-400 text-white hover:bg-fuchsia-500 hover:text-white drop-shadow-sm' },
+  { active: 'bg-pink-600 text-white ring-2 ring-pink-500/50 font-bold drop-shadow-sm', inactive: 'bg-pink-400 text-white hover:bg-pink-500 hover:text-white drop-shadow-sm' },
+  { active: 'bg-rose-600 text-white ring-2 ring-rose-500/50 font-bold drop-shadow-sm', inactive: 'bg-rose-400 text-white hover:bg-rose-500 hover:text-white drop-shadow-sm' },
+];
+
+const FOLDER_COLORS_DARK = [
+  { active: 'bg-red-400/30 text-white ring-2 ring-red-500/50 font-bold drop-shadow-sm', inactive: 'bg-red-400/10 text-white/80 hover:bg-red-400/20 hover:text-white drop-shadow-sm' },
+  { active: 'bg-orange-400/30 text-white ring-2 ring-orange-500/50 font-bold drop-shadow-sm', inactive: 'bg-orange-400/10 text-white/80 hover:bg-orange-400/20 hover:text-white drop-shadow-sm' },
+  { active: 'bg-amber-400/30 text-white ring-2 ring-amber-500/50 font-bold drop-shadow-sm', inactive: 'bg-amber-400/10 text-white/80 hover:bg-amber-400/20 hover:text-white drop-shadow-sm' },
+  { active: 'bg-green-400/30 text-white ring-2 ring-green-500/50 font-bold drop-shadow-sm', inactive: 'bg-green-400/10 text-white/80 hover:bg-green-400/20 hover:text-white drop-shadow-sm' },
+  { active: 'bg-emerald-400/30 text-white ring-2 ring-emerald-500/50 font-bold drop-shadow-sm', inactive: 'bg-emerald-400/10 text-white/80 hover:bg-emerald-400/20 hover:text-white drop-shadow-sm' },
+  { active: 'bg-teal-400/30 text-white ring-2 ring-teal-500/50 font-bold drop-shadow-sm', inactive: 'bg-teal-400/10 text-white/80 hover:bg-teal-400/20 hover:text-white drop-shadow-sm' },
+  { active: 'bg-cyan-400/30 text-white ring-2 ring-cyan-500/50 font-bold drop-shadow-sm', inactive: 'bg-cyan-400/10 text-white/80 hover:bg-cyan-400/20 hover:text-white drop-shadow-sm' },
+  { active: 'bg-sky-400/30 text-white ring-2 ring-sky-500/50 font-bold drop-shadow-sm', inactive: 'bg-sky-400/10 text-white/80 hover:bg-sky-400/20 hover:text-white drop-shadow-sm' },
+  { active: 'bg-blue-400/30 text-white ring-2 ring-blue-500/50 font-bold drop-shadow-sm', inactive: 'bg-blue-400/10 text-white/80 hover:bg-blue-400/20 hover:text-white drop-shadow-sm' },
+  { active: 'bg-indigo-400/30 text-white ring-2 ring-indigo-500/50 font-bold drop-shadow-sm', inactive: 'bg-indigo-400/10 text-white/80 hover:bg-indigo-400/20 hover:text-white drop-shadow-sm' },
+  { active: 'bg-violet-400/30 text-white ring-2 ring-violet-500/50 font-bold drop-shadow-sm', inactive: 'bg-violet-400/10 text-white/80 hover:bg-violet-400/20 hover:text-white drop-shadow-sm' },
+  { active: 'bg-purple-400/30 text-white ring-2 ring-purple-500/50 font-bold drop-shadow-sm', inactive: 'bg-purple-400/10 text-white/80 hover:bg-purple-400/20 hover:text-white drop-shadow-sm' },
+  { active: 'bg-fuchsia-400/30 text-white ring-2 ring-fuchsia-500/50 font-bold drop-shadow-sm', inactive: 'bg-fuchsia-400/10 text-white/80 hover:bg-fuchsia-400/20 hover:text-white drop-shadow-sm' },
+  { active: 'bg-pink-400/30 text-white ring-2 ring-pink-500/50 font-bold drop-shadow-sm', inactive: 'bg-pink-400/10 text-white/80 hover:bg-pink-400/20 hover:text-white drop-shadow-sm' },
+  { active: 'bg-rose-400/30 text-white ring-2 ring-rose-500/50 font-bold drop-shadow-sm', inactive: 'bg-rose-400/10 text-white/80 hover:bg-rose-400/20 hover:text-white drop-shadow-sm' },
+];
+
+const COLOR_KEY_TO_INDEX: Record<string, number> = {
+  red: 0, orange: 1, amber: 2, green: 3, emerald: 4, teal: 5,
+  cyan: 6, sky: 7, blue: 8, indigo: 9, violet: 10, purple: 11,
+  fuchsia: 12, pink: 13, rose: 14,
+};
 
 const CONTENT_TYPE_FILTERS: { key: ClipType; label: string; Icon: LucideIcon }[] = [
   { key: 'text', label: 'Text', Icon: FileText },
@@ -77,13 +119,20 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
     started: boolean;
   } | null>(null);
 
+  // Refs for dynamic values used in global mouse handlers (avoids re-subscribing)
+  const foldersRef = useRef(folders);
+  foldersRef.current = folders;
+  const folderDropTargetIdRef = useRef(folderDropTargetId);
+  folderDropTargetIdRef.current = folderDropTargetId;
+  const onReorderFoldersRef = useRef(onReorderFolders);
+  onReorderFoldersRef.current = onReorderFolders;
+
   // Simulated folder drag: global mouse handlers
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       const drag = folderDragRef.current;
       if (!drag) return;
 
-      // Start dragging after 5px threshold
       if (!drag.started) {
         if (Math.abs(e.clientX - drag.startX) > 5) {
           drag.started = true;
@@ -95,7 +144,6 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
 
       setFolderDragPos({ x: e.clientX, y: e.clientY });
 
-      // Find which folder button the mouse is over
       const container = scrollContainerRef.current;
       if (!container) return;
       const buttons = container.querySelectorAll('[data-folder-id]');
@@ -111,15 +159,15 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
 
     const handleMouseUp = () => {
       const drag = folderDragRef.current;
-      if (drag?.started && folderDropTargetId && onReorderFolders) {
-        const folderIds = folders.map((f) => f.id);
+      if (drag?.started && folderDropTargetIdRef.current && onReorderFoldersRef.current) {
+        const folderIds = foldersRef.current.map((f) => f.id);
         const dragIdx = folderIds.indexOf(drag.id);
-        const dropIdx = folderIds.indexOf(folderDropTargetId);
+        const dropIdx = folderIds.indexOf(folderDropTargetIdRef.current);
         if (dragIdx !== -1 && dropIdx !== -1) {
           const reordered = [...folderIds];
           const [dragged] = reordered.splice(dragIdx, 1);
           reordered.splice(dropIdx, 0, dragged);
-          onReorderFolders(reordered);
+          onReorderFoldersRef.current(reordered);
         }
       }
       folderDragRef.current = null;
@@ -133,7 +181,7 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [folders, folderDropTargetId, onReorderFolders]);
+  }, []); // Subscribe once — dynamic values accessed via refs
 
   // Scroll selected folder tab into view when selection changes
   useEffect(() => {
@@ -152,17 +200,16 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
     }
   }, [selectedFolder]);
 
-  const allCategoriesRaw: { id: string | null; name: string; count: number; color?: string | null; icon?: string | null }[] = [
-    { id: null, name: 'All', count: totalClipCount, icon: null },
-    ...folders.map((f) => ({ ...f, count: f.item_count })),
-  ];
-
-  // Filter folder tabs by search query
-  const allCategories = searchQuery.trim()
-    ? allCategoriesRaw.filter((cat) =>
-        cat.id === null || cat.name.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : allCategoriesRaw;
+  const allCategories = useMemo(() => {
+    const raw: { id: string | null; name: string; count: number; color?: string | null; icon?: string | null }[] = [
+      { id: null, name: 'All', count: totalClipCount, icon: null },
+      ...folders.map((f) => ({ ...f, count: f.item_count })),
+    ];
+    if (!searchQuery.trim()) return raw;
+    return raw.filter((cat) =>
+      cat.id === null || cat.name.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [folders, totalClipCount, searchQuery]);
 
   const handleMouseEnter = (folderId: string | null) => {
     if (isDragging) {
@@ -191,53 +238,12 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
     onFolderHoverEnd?.();
   };
 
-  const COLOR_KEY_TO_INDEX: Record<string, number> = {
-    red: 0, orange: 1, amber: 2, green: 3, emerald: 4, teal: 5,
-    cyan: 6, sky: 7, blue: 8, indigo: 9, violet: 10, purple: 11,
-    fuchsia: 12, pink: 13, rose: 14,
-  };
-
   const getFolderColor = useCallback((name: string, colorKey?: string | null) => {
     let hash = 0;
     for (let i = 0; i < name.length; i++) {
       hash = name.charCodeAt(i) + ((hash << 5) - hash);
     }
-    const colors =
-      theme === 'light'
-        ? [
-            { active: 'bg-red-600 text-white ring-2 ring-red-500/50 font-bold drop-shadow-sm', inactive: 'bg-red-400 text-white hover:bg-red-500 hover:text-white drop-shadow-sm' },
-            { active: 'bg-orange-600 text-white ring-2 ring-orange-500/50 font-bold drop-shadow-sm', inactive: 'bg-orange-400 text-white hover:bg-orange-500 hover:text-white drop-shadow-sm' },
-            { active: 'bg-amber-600 text-white ring-2 ring-amber-500/50 font-bold drop-shadow-sm', inactive: 'bg-amber-400 text-white hover:bg-amber-500 hover:text-white drop-shadow-sm' },
-            { active: 'bg-green-600 text-white ring-2 ring-green-500/50 font-bold drop-shadow-sm', inactive: 'bg-green-400 text-white hover:bg-green-500 hover:text-white drop-shadow-sm' },
-            { active: 'bg-emerald-600 text-white ring-2 ring-emerald-500/50 font-bold drop-shadow-sm', inactive: 'bg-emerald-400 text-white hover:bg-emerald-500 hover:text-white drop-shadow-sm' },
-            { active: 'bg-teal-600 text-white ring-2 ring-teal-500/50 font-bold drop-shadow-sm', inactive: 'bg-teal-400 text-white hover:bg-teal-500 hover:text-white drop-shadow-sm' },
-            { active: 'bg-cyan-600 text-white ring-2 ring-cyan-500/50 font-bold drop-shadow-sm', inactive: 'bg-cyan-400 text-white hover:bg-cyan-500 hover:text-white drop-shadow-sm' },
-            { active: 'bg-sky-600 text-white ring-2 ring-sky-500/50 font-bold drop-shadow-sm', inactive: 'bg-sky-400 text-white hover:bg-sky-500 hover:text-white drop-shadow-sm' },
-            { active: 'bg-blue-600 text-white ring-2 ring-blue-500/50 font-bold drop-shadow-sm', inactive: 'bg-blue-400 text-white hover:bg-blue-500 hover:text-white drop-shadow-sm' },
-            { active: 'bg-indigo-600 text-white ring-2 ring-indigo-500/50 font-bold drop-shadow-sm', inactive: 'bg-indigo-400 text-white hover:bg-indigo-500 hover:text-white drop-shadow-sm' },
-            { active: 'bg-violet-600 text-white ring-2 ring-violet-500/50 font-bold drop-shadow-sm', inactive: 'bg-violet-400 text-white hover:bg-violet-500 hover:text-white drop-shadow-sm' },
-            { active: 'bg-purple-600 text-white ring-2 ring-purple-500/50 font-bold drop-shadow-sm', inactive: 'bg-purple-400 text-white hover:bg-purple-500 hover:text-white drop-shadow-sm' },
-            { active: 'bg-fuchsia-600 text-white ring-2 ring-fuchsia-500/50 font-bold drop-shadow-sm', inactive: 'bg-fuchsia-400 text-white hover:bg-fuchsia-500 hover:text-white drop-shadow-sm' },
-            { active: 'bg-pink-600 text-white ring-2 ring-pink-500/50 font-bold drop-shadow-sm', inactive: 'bg-pink-400 text-white hover:bg-pink-500 hover:text-white drop-shadow-sm' },
-            { active: 'bg-rose-600 text-white ring-2 ring-rose-500/50 font-bold drop-shadow-sm', inactive: 'bg-rose-400 text-white hover:bg-rose-500 hover:text-white drop-shadow-sm' },
-          ]
-        : [
-            { active: 'bg-red-400/30 text-white ring-2 ring-red-500/50 font-bold drop-shadow-sm', inactive: 'bg-red-400/10 text-white/80 hover:bg-red-400/20 hover:text-white drop-shadow-sm' },
-            { active: 'bg-orange-400/30 text-white ring-2 ring-orange-500/50 font-bold drop-shadow-sm', inactive: 'bg-orange-400/10 text-white/80 hover:bg-orange-400/20 hover:text-white drop-shadow-sm' },
-            { active: 'bg-amber-400/30 text-white ring-2 ring-amber-500/50 font-bold drop-shadow-sm', inactive: 'bg-amber-400/10 text-white/80 hover:bg-amber-400/20 hover:text-white drop-shadow-sm' },
-            { active: 'bg-green-400/30 text-white ring-2 ring-green-500/50 font-bold drop-shadow-sm', inactive: 'bg-green-400/10 text-white/80 hover:bg-green-400/20 hover:text-white drop-shadow-sm' },
-            { active: 'bg-emerald-400/30 text-white ring-2 ring-emerald-500/50 font-bold drop-shadow-sm', inactive: 'bg-emerald-400/10 text-white/80 hover:bg-emerald-400/20 hover:text-white drop-shadow-sm' },
-            { active: 'bg-teal-400/30 text-white ring-2 ring-teal-500/50 font-bold drop-shadow-sm', inactive: 'bg-teal-400/10 text-white/80 hover:bg-teal-400/20 hover:text-white drop-shadow-sm' },
-            { active: 'bg-cyan-400/30 text-white ring-2 ring-cyan-500/50 font-bold drop-shadow-sm', inactive: 'bg-cyan-400/10 text-white/80 hover:bg-cyan-400/20 hover:text-white drop-shadow-sm' },
-            { active: 'bg-sky-400/30 text-white ring-2 ring-sky-500/50 font-bold drop-shadow-sm', inactive: 'bg-sky-400/10 text-white/80 hover:bg-sky-400/20 hover:text-white drop-shadow-sm' },
-            { active: 'bg-blue-400/30 text-white ring-2 ring-blue-500/50 font-bold drop-shadow-sm', inactive: 'bg-blue-400/10 text-white/80 hover:bg-blue-400/20 hover:text-white drop-shadow-sm' },
-            { active: 'bg-indigo-400/30 text-white ring-2 ring-indigo-500/50 font-bold drop-shadow-sm', inactive: 'bg-indigo-400/10 text-white/80 hover:bg-indigo-400/20 hover:text-white drop-shadow-sm' },
-            { active: 'bg-violet-400/30 text-white ring-2 ring-violet-500/50 font-bold drop-shadow-sm', inactive: 'bg-violet-400/10 text-white/80 hover:bg-violet-400/20 hover:text-white drop-shadow-sm' },
-            { active: 'bg-purple-400/30 text-white ring-2 ring-purple-500/50 font-bold drop-shadow-sm', inactive: 'bg-purple-400/10 text-white/80 hover:bg-purple-400/20 hover:text-white drop-shadow-sm' },
-            { active: 'bg-fuchsia-400/30 text-white ring-2 ring-fuchsia-500/50 font-bold drop-shadow-sm', inactive: 'bg-fuchsia-400/10 text-white/80 hover:bg-fuchsia-400/20 hover:text-white drop-shadow-sm' },
-            { active: 'bg-pink-400/30 text-white ring-2 ring-pink-500/50 font-bold drop-shadow-sm', inactive: 'bg-pink-400/10 text-white/80 hover:bg-pink-400/20 hover:text-white drop-shadow-sm' },
-            { active: 'bg-rose-400/30 text-white ring-2 ring-rose-500/50 font-bold drop-shadow-sm', inactive: 'bg-rose-400/10 text-white/80 hover:bg-rose-400/20 hover:text-white drop-shadow-sm' },
-          ];
+    const colors = theme === 'light' ? FOLDER_COLORS_LIGHT : FOLDER_COLORS_DARK;
     if (colorKey && colorKey in COLOR_KEY_TO_INDEX) {
       return colors[COLOR_KEY_TO_INDEX[colorKey]];
     }

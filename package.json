@@ -1,6 +1,6 @@
 {
   "name": "clippaste",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "A beautiful clipboard history manager for Windows",
   "license": "GPL-3.0",
   "scripts": {
@@ -10,6 +10,9 @@
     "tauri": "tauri",
     "format": "prettier --write \"frontend/src/**/*.{ts,tsx,css}\"",
     "format:check": "prettier --check \"frontend/src/**/*.{ts,tsx,css}\"",
+    "test": "bash scripts/test.sh --all",
+    "test:be": "bash scripts/test.sh --be",
+    "test:fe": "bash scripts/test.sh --fe",
     "kill": "kill-dev.bat",
     "dev:clean": "kill-dev.bat && pnpm tauri dev"
   },

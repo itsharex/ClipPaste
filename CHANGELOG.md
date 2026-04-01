@@ -11,6 +11,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.6.0] - 2026-04-01
+
+### Added
+- **Quick-paste shortcuts (Ctrl+1..9)** — press Ctrl+1 to paste the first clip, Ctrl+2 for second, up to Ctrl+9; index badge shown on card footer
+- **Search highlight** — matching keywords highlighted in yellow within clip card text
+- **Relative timestamp** — card footer now shows "2m", "1h", "3d" etc. alongside character count
+- **`copy_clip` command** — new backend command that copies to clipboard without hiding the window or simulating paste (fixes Copy button behavior)
+
+### Changed
+- **Backend modularized** — monolithic `commands.rs` (1504 lines) split into 7 domain modules: `clips.rs`, `folders.rs`, `settings.rs`, `data.rs`, `window.rs`, `helpers.rs`, `mod.rs`
+- **Frontend refactored** — App.tsx logic extracted into 4 custom hooks: `useClipActions`, `useFolderActions`, `useDragDrop`, `useFolderPreview`; SettingsPanel split into `GeneralTab`, `FoldersTab`, `DashboardTab`
+- **47 Rust tests** — comprehensive test suite for subtype detection, UTF-8 truncation, hash, search cache, settings cache, and integration tests
+
+### Fixed
+- **Copy button hid window** — `handleCopy` was calling `paste_clip` (which hides window + simulates paste); now uses dedicated `copy_clip`
+- **Image size display** — card footer now reads actual `size_bytes` from metadata instead of estimating from base64 string length
+
+### Performance
+- **Async image I/O** — `clip_to_item_async` uses `tokio::fs::read` instead of blocking `std::fs::read`, preventing Tokio runtime stalls
+- **loadClips stability** — removed `clips.length` from useCallback dependency array, eliminating cascading re-renders
+- **Stagger animation** — uses viewport-relative index instead of absolute index, preventing 1.5s+ invisible delays on scrolled items
+- **Wheel scroll** — changed from `behavior: 'smooth'` to `'auto'`, eliminating scroll accumulation lag
+- **Context menu** — single `clips.find()` call instead of 3-4 repeated lookups per render
+- **ControlBar** — color arrays moved to module-level constants; folder categories wrapped in `useMemo`
+- **Dynamic skeleton count** — skeleton cards computed from viewport width instead of hardcoded 8
+
+---
+
 ## [1.5.0] - 2026-04-01
 
 ### Added
@@ -449,7 +477,9 @@ Version bump for auto-updater (v1.4.5 was re-tagged, users on old 1.4.5 wouldn't
 ---
 
 <!-- Links -->
-[Unreleased]: https://github.com/Phieu-Tran/ClipPaste/compare/v1.2.6...HEAD
+[Unreleased]: https://github.com/Phieu-Tran/ClipPaste/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/Phieu-Tran/ClipPaste/compare/v1.5.0...v1.6.0
+[1.5.0]: https://github.com/Phieu-Tran/ClipPaste/compare/v1.4.8...v1.5.0
 [1.2.6]: https://github.com/Phieu-Tran/ClipPaste/compare/v1.2.5...v1.2.6
 [1.2.5]: https://github.com/Phieu-Tran/ClipPaste/compare/v1.2.4...v1.2.5
 [1.2.4]: https://github.com/Phieu-Tran/ClipPaste/compare/v1.2.3...v1.2.4

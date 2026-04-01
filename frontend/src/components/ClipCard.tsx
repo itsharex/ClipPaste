@@ -1,8 +1,9 @@
 import { ClipboardItem } from '../types';
 import { clsx } from 'clsx';
-import { useMemo, memo, useState, useRef } from 'react';
+import { useMemo, memo, useState, useRef, useEffect } from 'react';
 import { LAYOUT, TOTAL_COLUMN_WIDTH, PREVIEW_CHAR_LIMIT } from '../constants';
-import { Copy, Check, Pin, Link, Mail, Palette, FolderOpen, StickyNote, Image as ImageIcon } from 'lucide-react';
+import { Copy, Check, Pin, Link, Mail, Palette, FolderOpen, StickyNote, Image as ImageIcon, Folder } from 'lucide-react';
+import { formatDistanceToNowStrict } from 'date-fns';
 
 interface ClipCardProps {
   clip: ClipboardItem;
@@ -12,8 +13,11 @@ interface ClipCardProps {
   onCopy: () => void;
   onPin: () => void;
   showPin?: boolean;
+  folderName?: string | null;
   onNativeDragStart?: (e: React.DragEvent, clip: ClipboardItem) => void;
   onContextMenu?: (e: React.MouseEvent) => void;
+  searchQuery?: string;
+  index?: number;
 }
 
 /** Try to extract domain from a URL string */
@@ -34,6 +38,53 @@ const SUBTYPE_CONFIG: Record<string, { icon: typeof Link; label: string; color: 
   path: { icon: FolderOpen, label: 'Path', color: 'text-amber-400' },
 };
 
+/** Highlight search matches in text */
+function HighlightText({ text, query }: { text: string; query?: string }) {
+  if (!query?.trim()) return <>{text}</>;
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  // Build regex from words, escape special chars
+  const escaped = words.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const regex = new RegExp(`(${escaped.join('|')})`, 'gi');
+  const parts = text.split(regex);
+  return (
+    <>
+      {parts.map((part, i) =>
+        words.some(w => part.toLowerCase() === w)
+          ? <mark key={i} className="bg-yellow-400/30 text-foreground rounded-sm">{part}</mark>
+          : part
+      )}
+    </>
+  );
+}
+
+/** Format relative time: "2m", "1h", "3d" */
+function relativeTime(isoDate: string): string {
+  try {
+    return formatDistanceToNowStrict(new Date(isoDate), { addSuffix: false })
+      .replace(' seconds', 's').replace(' second', 's')
+      .replace(' minutes', 'm').replace(' minute', 'm')
+      .replace(' hours', 'h').replace(' hour', 'h')
+      .replace(' days', 'd').replace(' day', 'd')
+      .replace(' months', 'mo').replace(' month', 'mo')
+      .replace(' years', 'y').replace(' year', 'y');
+  } catch {
+    return '';
+  }
+}
+
+/** Parse image size from metadata JSON */
+function getImageSizeFromMeta(metadata: string | null): string | null {
+  if (!metadata) return null;
+  try {
+    const meta = JSON.parse(metadata);
+    if (meta.size_bytes) {
+      const kb = meta.size_bytes / 1024;
+      return kb >= 1024 ? `${(kb / 1024).toFixed(1)}MB` : `${Math.round(kb)}KB`;
+    }
+  } catch {}
+  return null;
+}
+
 export const ClipCard = memo(function ClipCard({
   clip,
   isSelected,
@@ -42,10 +93,19 @@ export const ClipCard = memo(function ClipCard({
   onCopy,
   onPin,
   showPin,
+  folderName,
   onNativeDragStart,
   onContextMenu,
+  searchQuery,
+  index,
 }: ClipCardProps) {
   const [copied, setCopied] = useState(false);
+  const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+    };
+  }, []);
   const title = clip.source_app || clip.clip_type.toUpperCase();
 
   // Memoize the content rendering — now subtype-aware
@@ -95,7 +155,7 @@ export const ClipCard = memo(function ClipCard({
             </div>
           )}
           <pre className="flex-1 whitespace-pre-wrap break-all font-mono text-[11px] leading-snug text-foreground/70">
-            {clip.content.substring(0, PREVIEW_CHAR_LIMIT)}
+            <HighlightText text={clip.content.substring(0, PREVIEW_CHAR_LIMIT)} query={searchQuery} />
           </pre>
         </div>
       );
@@ -110,7 +170,7 @@ export const ClipCard = memo(function ClipCard({
             <span className="text-[11px] font-semibold text-emerald-400">Email</span>
           </div>
           <pre className="whitespace-pre-wrap break-all font-mono text-[12px] leading-snug text-foreground/90">
-            {clip.content.trim()}
+            <HighlightText text={clip.content.trim()} query={searchQuery} />
           </pre>
         </div>
       );
@@ -126,7 +186,7 @@ export const ClipCard = memo(function ClipCard({
             <span className="text-[11px] font-semibold text-amber-400">Path</span>
           </div>
           <pre className="whitespace-pre-wrap break-all font-mono text-[12px] leading-snug text-foreground/90">
-            {content}
+            <HighlightText text={content} query={searchQuery} />
           </pre>
         </div>
       );
@@ -135,10 +195,10 @@ export const ClipCard = memo(function ClipCard({
     // Default text
     return (
       <pre className="whitespace-pre-wrap break-all font-mono text-[13px] leading-tight text-foreground">
-        <span>{clip.content.substring(0, PREVIEW_CHAR_LIMIT)}</span>
+        <span><HighlightText text={clip.content.substring(0, PREVIEW_CHAR_LIMIT)} query={searchQuery} /></span>
       </pre>
     );
-  }, [clip.clip_type, clip.content, clip.subtype]);
+  }, [clip.clip_type, clip.content, clip.subtype, searchQuery]);
 
   // Generate distinct color based on source app name
   const getAppGradient = (name: string) => {
@@ -277,7 +337,8 @@ export const ClipCard = memo(function ClipCard({
               e.stopPropagation();
               onCopy();
               setCopied(true);
-              setTimeout(() => setCopied(false), 2000);
+              if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+              copiedTimerRef.current = setTimeout(() => setCopied(false), 2000);
             }}
             className="rounded-md p-1 opacity-0 transition-opacity duration-150 hover:bg-black/10 group-hover:opacity-100"
             title="Copy to clipboard"
@@ -306,12 +367,27 @@ export const ClipCard = memo(function ClipCard({
 
         {/* Footer */}
         <div className="flex items-center justify-between bg-card/80 px-2.5 py-1">
-          <span className="text-[10px] font-medium text-muted-foreground/40">
-            {clip.clip_type === 'image'
-              ? `${Math.round((clip.content.length * 0.75) / 1024)}KB`
-              : `${clip.content.length} chars`}
+          <span className="flex items-center gap-1.5 text-[10px] font-medium text-muted-foreground/40">
+            {index != null && index < 9 && (
+              <span className="rounded bg-primary/10 px-1 py-0.5 text-[9px] font-bold tabular-nums text-primary/60" title={`Ctrl+${index + 1} to paste`}>
+                {index + 1}
+              </span>
+            )}
+            <span>
+              {clip.clip_type === 'image'
+                ? (getImageSizeFromMeta(clip.metadata) ?? `${Math.round((clip.content.length * 0.75) / 1024)}KB`)
+                : `${clip.content.length} chars`}
+            </span>
+            <span className="text-muted-foreground/25">·</span>
+            <span title={clip.created_at}>{relativeTime(clip.created_at)}</span>
           </span>
           <span className="flex items-center gap-2 text-[10px] text-muted-foreground/35">
+            {folderName && (
+              <span className="flex items-center gap-0.5 rounded bg-indigo-500/15 px-1.5 py-0.5 text-[9px] font-semibold text-indigo-400" title={`In folder: ${folderName}`}>
+                <Folder size={9} className="flex-shrink-0" />
+                {folderName}
+              </span>
+            )}
             {clip.paste_count > 0 && (
               <span className="tabular-nums" title="Times pasted">×{clip.paste_count}</span>
             )}

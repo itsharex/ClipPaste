@@ -44,8 +44,16 @@ pub static CLIPBOARD_SYNC: Lazy<Arc<tokio::sync::Mutex<()>>> = Lazy::new(|| Arc:
 
 /// In-memory search index: (uuid, preview_lowercase, folder_id)
 /// Loaded once at startup, updated on each clipboard change. Avoids slow SQLite full-table scans.
-pub static SEARCH_CACHE: Lazy<parking_lot::Mutex<Vec<(String, String, Option<i64>)>>> =
-    Lazy::new(|| parking_lot::Mutex::new(Vec::new()));
+pub static SEARCH_CACHE: Lazy<parking_lot::RwLock<Vec<(String, String, Option<i64>)>>> =
+    Lazy::new(|| parking_lot::RwLock::new(Vec::new()));
+
+/// In-memory settings cache: avoids DB round-trips for hot-path settings like auto_paste, ignore_ghost_clips.
+pub static SETTINGS_CACHE: Lazy<parking_lot::RwLock<std::collections::HashMap<String, String>>> =
+    Lazy::new(|| parking_lot::RwLock::new(std::collections::HashMap::new()));
+
+#[cfg(target_os = "windows")]
+pub static ICON_CACHE: Lazy<parking_lot::Mutex<std::collections::HashMap<String, Option<String>>>> =
+    Lazy::new(|| parking_lot::Mutex::new(std::collections::HashMap::new()));
 
 use std::sync::atomic::{AtomicU64, Ordering};
 static DEBOUNCE_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -61,20 +69,44 @@ pub async fn load_search_cache(pool: &sqlx::SqlitePool) {
         .collect();
 
     let count = entries.len();
-    *SEARCH_CACHE.lock() = entries;
+    *SEARCH_CACHE.write() = entries;
     log::info!("SEARCH_CACHE: Loaded {} clip previews into memory", count);
 }
 
 /// Add a single clip to the search cache
 pub fn add_to_search_cache(uuid: &str, preview: &str, folder_id: Option<i64>) {
-    let mut cache = SEARCH_CACHE.lock();
+    let mut cache = SEARCH_CACHE.write();
     cache.push((uuid.to_string(), preview.to_lowercase(), folder_id));
 }
 
 /// Remove a clip from the search cache
 pub fn remove_from_search_cache(uuid: &str) {
-    let mut cache = SEARCH_CACHE.lock();
+    let mut cache = SEARCH_CACHE.write();
     cache.retain(|(u, _, _)| u != uuid);
+}
+
+/// Load all settings into memory for instant access
+pub async fn load_settings_cache(pool: &sqlx::SqlitePool) {
+    let rows: Vec<(String, String)> = sqlx::query_as("SELECT key, value FROM settings")
+        .fetch_all(pool).await.unwrap_or_default();
+    let mut cache = SETTINGS_CACHE.write();
+    cache.clear();
+    for (key, value) in rows {
+        cache.insert(key, value);
+    }
+    log::info!("SETTINGS_CACHE: Loaded {} settings into memory", cache.len());
+}
+
+/// Get a setting from the in-memory cache (no DB round-trip)
+pub fn get_cached_setting(key: &str) -> Option<String> {
+    SETTINGS_CACHE.read().get(key).cloned()
+}
+
+pub fn truncate_utf8(s: &str, max_chars: usize) -> &str {
+    match s.char_indices().nth(max_chars) {
+        Some((idx, _)) => &s[..idx],
+        None => s,
+    }
 }
 
 /// Detect content subtype from text (url, email, color, path)
@@ -200,9 +232,8 @@ async fn process_clipboard_change(app: AppHandle, db: Arc<Database>, source_app_
     // Try Image
     if let Ok(read_image_result) = read_image(app.clone(), None).await {
          if let Ok(bytes) = std::fs::read(&read_image_result.path) {
-             if let Ok(image) = image::load_from_memory(&bytes) {
-                 let width = image.width();
-                 let height = image.height();
+             if let Ok(reader) = image::io::Reader::new(std::io::Cursor::new(&bytes)).with_guessed_format() {
+               if let Ok((width, height)) = reader.into_dimensions() {
                  let size_bytes = bytes.len();
 
                  clip_hash = calculate_hash(&bytes);
@@ -232,6 +263,7 @@ async fn process_clipboard_change(app: AppHandle, db: Arc<Database>, source_app_
 
                  // Clean up the temp file from clipboard plugin
                  let _ = std::fs::remove_file(read_image_result.path);
+               }
              }
          }
     }
@@ -244,7 +276,7 @@ async fn process_clipboard_change(app: AppHandle, db: Arc<Database>, source_app_
                  clip_content = text.as_bytes().to_vec();
                  clip_hash = calculate_hash(&clip_content);
                  clip_type = "text";
-                 clip_preview = text.chars().take(2000).collect::<String>();
+                 clip_preview = truncate_utf8(text, 2000).to_string();
                  clip_subtype = detect_subtype(text);
                  found_content = true;
                 log::debug!("CLIPBOARD: Found text ({} chars, subtype: {:?})", clip_preview.len(), clip_subtype);
@@ -281,12 +313,8 @@ async fn process_clipboard_change(app: AppHandle, db: Arc<Database>, source_app_
     let (source_app, source_icon, exe_name, full_path, is_explicit_owner) = source_app_info;
     log::info!("CLIPBOARD: Source app: {:?}, explicit: {}", source_app, is_explicit_owner);
 
-    // Check ignore_ghost_clips setting
-    let pool = &db.pool;
-    let ignore_ghost_clips = sqlx::query_scalar::<_, String>(r#"SELECT value FROM settings WHERE key = 'ignore_ghost_clips'"#)
-        .fetch_optional(pool)
-        .await
-        .unwrap_or(None)
+    // Check ignore_ghost_clips setting (from in-memory cache, no DB round-trip)
+    let ignore_ghost_clips = get_cached_setting("ignore_ghost_clips")
         .and_then(|v| v.parse::<bool>().ok())
         .unwrap_or(false);
 
@@ -364,14 +392,7 @@ async fn process_clipboard_change(app: AppHandle, db: Arc<Database>, source_app_
         // Update in-memory search cache
         add_to_search_cache(&clip_uuid, &clip_preview, None);
 
-        // Update FTS5 index for text clips
-        if clip_type != "image" {
-            let _ = sqlx::query("INSERT INTO clips_fts(uuid, text_content) VALUES (?, ?)")
-                .bind(&clip_uuid)
-                .bind(&clip_preview)
-                .execute(pool)
-                .await;
-        }
+        // FTS5 index no longer used — search uses in-memory SEARCH_CACHE
 
         let _ = app.emit("clipboard-change", &serde_json::json!({
             "id": clip_uuid,
@@ -384,7 +405,7 @@ async fn process_clipboard_change(app: AppHandle, db: Arc<Database>, source_app_
     }
 }
 
-fn calculate_hash(content: &[u8]) -> String {
+pub fn calculate_hash(content: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(content);
     let result = hasher.finalize();
@@ -444,7 +465,16 @@ fn get_clipboard_owner_app_info() -> (Option<String>, Option<String>, Option<Str
                 if !exe_name.is_empty() { Some(exe_name.clone()) } else { None }
             };
 
-            let icon = extract_icon(&full_path_str);
+            let icon = {
+                let mut cache = ICON_CACHE.lock();
+                if let Some(cached) = cache.get(&full_path_str) {
+                    cached.clone()
+                } else {
+                    let extracted = extract_icon(&full_path_str);
+                    cache.insert(full_path_str.clone(), extracted.clone());
+                    extracted
+                }
+            };
             (final_name, icon, Some(full_path_str))
         } else {
             (if !exe_name.is_empty() { Some(exe_name.clone()) } else { None }, None, None)

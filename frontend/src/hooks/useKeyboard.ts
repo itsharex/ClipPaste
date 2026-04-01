@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 interface KeyboardOptions {
   onClose?: () => void;
@@ -9,24 +9,30 @@ interface KeyboardOptions {
   onPaste?: () => void;
   onEdit?: () => void;
   onPin?: () => void;
+  onQuickPaste?: (index: number) => void;
 }
 
 export function useKeyboard(options: KeyboardOptions) {
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && options.onClose) {
+      const opts = optionsRef.current;
+
+      if (e.key === 'Escape' && opts.onClose) {
         e.preventDefault();
-        options.onClose();
+        opts.onClose();
       }
 
-      if ((e.metaKey || e.ctrlKey) && e.key === 'f' && options.onSearch) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'f' && opts.onSearch) {
         e.preventDefault();
-        options.onSearch();
+        opts.onSearch();
       }
 
-      if (e.key === 'Delete' && (e.ctrlKey || e.metaKey) && options.onDelete) {
+      if (e.key === 'Delete' && (e.ctrlKey || e.metaKey) && opts.onDelete) {
         e.preventDefault();
-        options.onDelete();
+        opts.onDelete();
       }
 
       const target = e.target as HTMLElement;
@@ -35,35 +41,42 @@ export function useKeyboard(options: KeyboardOptions) {
         target.tagName === 'TEXTAREA' ||
         target.isContentEditable;
 
-      // Arrow keys work even when typing in search input
-      if (e.key === 'ArrowUp' && options.onNavigateUp) {
+      if (e.key === 'ArrowUp' && opts.onNavigateUp) {
         e.preventDefault();
-        options.onNavigateUp();
+        opts.onNavigateUp();
       }
 
-      if (e.key === 'ArrowDown' && options.onNavigateDown) {
+      if (e.key === 'ArrowDown' && opts.onNavigateDown) {
         e.preventDefault();
-        options.onNavigateDown();
+        opts.onNavigateDown();
       }
 
-      if (e.key === 'Enter' && options.onPaste) {
+      if (e.key === 'Enter' && opts.onPaste) {
         e.preventDefault();
-        options.onPaste();
+        opts.onPaste();
       }
 
-      if (e.key === 'e' && !e.metaKey && !e.ctrlKey && !isTyping && options.onEdit) {
+      if (e.key === 'e' && !e.metaKey && !e.ctrlKey && !isTyping && opts.onEdit) {
         e.preventDefault();
-        options.onEdit();
+        opts.onEdit();
       }
 
-      // 'p' without modifier = pin; Ctrl+P = also pin (and block browser print)
-      if (e.key === 'p' && !isTyping && options.onPin) {
+      if (e.key === 'p' && !isTyping && opts.onPin) {
         e.preventDefault();
-        options.onPin();
+        opts.onPin();
+      }
+
+      // Ctrl+1..9 quick-paste (not in input fields)
+      if ((e.ctrlKey || e.metaKey) && !isTyping && opts.onQuickPaste) {
+        const num = parseInt(e.key, 10);
+        if (num >= 1 && num <= 9) {
+          e.preventDefault();
+          opts.onQuickPaste(num - 1);
+        }
       }
     };
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [options]);
+  }, []); // Subscribe once — options accessed via ref
 }

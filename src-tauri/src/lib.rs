@@ -36,12 +36,17 @@ mod database;
 mod models;
 mod commands;
 mod constants;
+mod utils;
+
+#[cfg(test)]
+mod tests;
 
 
 use models::get_runtime;
 use database::Database;
 
 pub fn run_app() {
+    #[allow(unused_mut)]
     let mut builder = tauri::Builder::default();
 
     #[cfg(target_os = "macos")]
@@ -91,7 +96,9 @@ pub fn run_app() {
     });
 
     rt.block_on(async {
-        db.migrate().await.ok();
+        if let Err(e) = db.migrate().await {
+            log::error!("Database migration failed: {}", e);
+        }
     });
 
     let db_arc = Arc::new(db);
@@ -357,10 +364,11 @@ pub fn run_app() {
             let db_for_clip = db_for_clipboard.clone();
             clipboard::init(&handle_for_clip, db_for_clip);
 
-            // Load search cache into memory for instant search
+            // Load caches into memory for instant search + settings lookups
             let db_for_cache = db_for_clipboard.clone();
             tauri::async_runtime::spawn(async move {
                 clipboard::load_search_cache(&db_for_cache.pool).await;
+                clipboard::load_settings_cache(&db_for_cache.pool).await;
                 // Enforce max_items + clean up orphan images on startup
                 db_for_cache.enforce_max_items().await;
                 db_for_cache.cleanup_orphan_images().await;
@@ -373,6 +381,7 @@ pub fn run_app() {
             commands::get_clips,
             commands::get_clip,
             commands::paste_clip,
+            commands::copy_clip,
             commands::delete_clip,
             commands::move_to_folder,
             commands::create_folder,
@@ -619,17 +628,9 @@ pub fn animate_window_hide(window: &tauri::WebviewWindow, on_done: Option<Box<dy
 }
 
 
-pub fn get_config_path() -> std::path::PathBuf {
-    let default_config_dir = match dirs::config_dir() {
-        Some(path) => path.join("ClipPaste"),
-        None => std::env::current_dir().unwrap_or(std::path::PathBuf::from(".")).join("ClipPaste"),
-    };
-    default_config_dir.join("config.json")
-}
-
 fn get_data_dir() -> std::path::PathBuf {
     // Check if custom data directory is set in config.json
-    let config_path = get_config_path();
+    let config_path = utils::get_config_path();
     if let Ok(config_content) = fs::read_to_string(&config_path) {
         if let Ok(config) = serde_json::from_str::<serde_json::Value>(&config_content) {
             if let Some(custom_path) = config.get("data_directory").and_then(|v| v.as_str()) {
@@ -642,11 +643,7 @@ fn get_data_dir() -> std::path::PathBuf {
     }
 
     // Fallback to default location
-    let current_dir = std::env::current_dir().unwrap_or(std::path::PathBuf::from("."));
-    match dirs::data_dir() {
-        Some(path) => path.join("ClipPaste"),
-        None => current_dir.join("ClipPaste"),
-    }
+    utils::get_default_data_dir()
 }
 
 /// Check if there is a monitor adjacent below the given bottom edge.
