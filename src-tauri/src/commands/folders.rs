@@ -145,6 +145,15 @@ pub async fn move_to_folder(clip_id: String, folder_id: Option<String>, db: taur
         .bind(folder_id)
         .bind(&clip_id)
         .execute(pool).await.map_err(|e| e.to_string())?;
+
+    // Update in-memory search cache with new folder_id
+    {
+        let mut cache = crate::clipboard::SEARCH_CACHE.write();
+        if let Some(entry) = cache.iter_mut().find(|(uuid, _, _, _)| uuid == &clip_id) {
+            entry.2 = folder_id;
+        }
+    }
+
     Ok(())
 }
 

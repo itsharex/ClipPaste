@@ -96,17 +96,13 @@ export function useClipActions(opts: UseClipActionsOpts) {
     [setClips, setIsLoading, setHasMore, setSelectedClipId]
   );
 
-  const handleDelete = async (clipId: string | null) => {
-    if (!clipId) return;
+  const doDelete = async (clipId: string) => {
     if (isDeletingRef.current) return;
     isDeletingRef.current = true;
     try {
-      // Folder items are hard-deleted directly (soft-deleted folder items can never be cleaned up by bulk clear)
-      const isInFolder = clips.find((c) => c.id === clipId)?.folder_id != null;
-      await invoke('delete_clip', { id: clipId, hardDelete: isInFolder });
+      await invoke('delete_clip', { id: clipId });
       setClips((prev) => prev.filter((c) => c.id !== clipId));
       setSelectedClipId(null);
-      // Refresh counts
       loadFolders();
       refreshTotalCount();
       toast.success('Clip deleted');
@@ -116,6 +112,21 @@ export function useClipActions(opts: UseClipActionsOpts) {
     } finally {
       isDeletingRef.current = false;
     }
+  };
+
+  const handleDelete = async (clipId: string | null) => {
+    if (!clipId) return;
+    toast('Delete this clip?', {
+      action: {
+        label: 'Delete',
+        onClick: () => doDelete(clipId),
+      },
+      cancel: {
+        label: 'Cancel',
+        onClick: () => {},
+      },
+      duration: 4000,
+    });
   };
 
   const handlePaste = async (clipId: string) => {

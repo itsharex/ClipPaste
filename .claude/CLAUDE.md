@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**ClipPaste** is a cross-platform clipboard history manager for **Windows, macOS, and Linux**, built with **Tauri v2** (Rust backend) + **React/TypeScript** (frontend). Package name: `clippaste`, version: `1.6.4`.
+**ClipPaste** is a cross-platform clipboard history manager for **Windows, macOS, and Linux**, built with **Tauri v2** (Rust backend) + **React/TypeScript** (frontend). Package name: `clippaste`, version: `1.6.5`.
 
 ### Platform Support
 
@@ -51,7 +51,7 @@ ClipPaste/
 │   │       ├── FoldersTab.tsx
 │   │       └── DashboardTab.tsx
 │   ├── hooks/
-│   │   ├── useKeyboard.ts    # Keyboard shortcuts (incl. Ctrl+1..9 quick-paste)
+│   │   ├── useKeyboard.ts    # Keyboard shortcuts (Esc, Ctrl+F, arrows, Enter, E, P, Ctrl+Delete)
 │   │   ├── useTheme.ts       # Theme management
 │   │   ├── useClipActions.ts  # Clip CRUD, paste, copy, pin, note
 │   │   ├── useFolderActions.ts # Folder CRUD, reorder, move clip
@@ -68,12 +68,12 @@ ClipPaste/
 │   ├── lib.rs             # run_app(), window animation, tray, hotkey setup
 │   ├── commands/          # Tauri commands (split by domain)
 │   │   ├── mod.rs         # Re-exports all command modules
-│   │   ├── clips.rs       # get/paste/copy/delete/search/pin/note
+│   │   ├── clips.rs       # get/paste/copy/delete/search/pin/note/bulk_delete/bulk_move
 │   │   ├── folders.rs     # get/create/delete/rename/move/reorder
 │   │   ├── settings.rs    # get/save settings, ignored apps, hotkey, cleanup
 │   │   ├── data.rs        # export/import, dashboard, timeline, file/folder picker
 │   │   ├── window.rs      # show/hide/focus, dragging, ping
-│   │   └── helpers.rs     # clip_to_item_async, check_auto_paste_and_hide
+│   │   └── helpers.rs     # clip_to_item_async, check_auto_paste_and_hide, clipboard_write_text
 │   ├── clipboard.rs       # Clipboard monitoring, caches, platform-specific paste
 │   ├── database.rs        # SQLite pool + migrations
 │   ├── models.rs          # Rust structs (Clip, Folder, ClipboardItem, etc.)
@@ -111,6 +111,7 @@ add_ignored_app, remove_ignored_app, get_ignored_apps
 pick_file, pick_folder, get_layout_config
 get_data_directory, set_data_directory
 set_dragging, reorder_folders, toggle_pin, paste_text
+bulk_delete_clips, bulk_move_clips
 export_data, import_data, get_dashboard_stats, get_clips_by_date, get_clip_dates
 update_note
 ```

@@ -47,7 +47,7 @@ export function EditClipModal({ clip, onPaste, onClose }: EditClipModalProps) {
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div className="flex w-[90%] flex-col gap-2 rounded-lg border border-border bg-popover p-3 shadow-xl">
-        <p className="text-xs text-muted-foreground">Chỉnh sửa trước khi paste · Enter để paste · Shift+Enter xuống dòng · Esc để hủy</p>
+        <p className="text-xs text-muted-foreground">Edit before paste · Enter to paste · Shift+Enter for new line · Esc to cancel</p>
         <textarea
           ref={textareaRef}
           value={text}
@@ -59,7 +59,7 @@ export function EditClipModal({ clip, onPaste, onClose }: EditClipModalProps) {
             onClick={onClose}
             className="rounded-md px-3 py-1 text-sm text-muted-foreground hover:bg-accent"
           >
-            Hủy
+            Cancel
           </button>
           <button
             onClick={() => onPaste(text)}

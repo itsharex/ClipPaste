@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useCallback } from 'react';
+import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { clsx } from 'clsx';
 import { ClipboardItem } from '../types';
@@ -10,7 +10,8 @@ interface ClipListProps {
   isLoading: boolean;
   hasMore: boolean;
   selectedClipId: string | null;
-  onSelectClip: (clipId: string) => void;
+  selectedClipIds?: Set<string>;
+  onSelectClip: (clipId: string, e?: React.MouseEvent) => void;
   onPaste: (clipId: string) => void;
   onCopy: (clipId: string) => void;
   onPin: (clipId: string) => void;
@@ -32,6 +33,7 @@ export function ClipList({
   isLoading,
   hasMore,
   selectedClipId,
+  selectedClipIds,
   onSelectClip,
   onPaste,
   onCopy,
@@ -60,6 +62,19 @@ export function ClipList({
     }
     prevClipsKeyRef.current = clipsKey;
   }, [clipsKey]);
+
+  // Multi-select order: map clip id → display index (0-based) among selected clips
+  const multiSelectOrder = useMemo(() => {
+    if (!selectedClipIds || selectedClipIds.size <= 1) return new Map<string, number>();
+    const map = new Map<string, number>();
+    let idx = 0;
+    for (const clip of clips) {
+      if (selectedClipIds.has(clip.id)) {
+        map.set(clip.id, idx++);
+      }
+    }
+    return map;
+  }, [clips, selectedClipIds]);
 
   // Virtual list — horizontal
   const virtualizer = useVirtualizer({
@@ -106,7 +121,11 @@ export function ClipList({
     // Let native horizontal trackpad gestures pass through untouched
     if (e.deltaY !== 0 && e.deltaX === 0) {
       e.preventDefault();
-      containerRef.current.scrollLeft += e.deltaY * 0.5;
+      // Mouse wheel: deltaMode=0 with large steps (~100px), needs higher multiplier
+      // Trackpad: deltaMode=0 with small steps (~1-30px), needs lower multiplier
+      const isLikelyMouse = Math.abs(e.deltaY) >= 50;
+      const multiplier = isLikelyMouse ? 2.5 : 0.5;
+      containerRef.current.scrollLeft += e.deltaY * multiplier;
     }
   }, []);
 
@@ -227,7 +246,9 @@ export function ClipList({
               <ClipCard
                 clip={clip}
                 isSelected={selectedClipId === clip.id}
-                onSelect={() => onSelectClip(clip.id)}
+                isMultiSelected={selectedClipIds?.has(clip.id) ?? false}
+                multiSelectIndex={selectedClipIds?.has(clip.id) ? multiSelectOrder.get(clip.id) : undefined}
+                onSelect={(e) => onSelectClip(clip.id, e)}
                 onPaste={() => onPaste(clip.id)}
                 onCopy={() => onCopy(clip.id)}
                 onPin={() => onPin(clip.id)}
@@ -244,7 +265,6 @@ export function ClipList({
                 onNativeDragStart={onNativeDragStart}
                 onContextMenu={(e: React.MouseEvent) => onCardContextMenu?.(e, clip.id)}
                 searchQuery={searchQuery}
-                index={virtualItem.index}
               />
             </div>
           );

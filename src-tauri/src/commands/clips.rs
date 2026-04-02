@@ -1,24 +1,23 @@
 use tauri::{AppHandle, Emitter};
-use tauri_plugin_clipboard_x::{write_text, stop_listening, start_listening};
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use crate::database::Database;
 use crate::models::{Clip, ClipboardItem};
-use super::helpers::{clip_to_item_async, check_auto_paste_and_hide};
+use super::helpers::{clip_to_item_async, check_auto_paste_and_hide, clipboard_write_text, clipboard_set_hashes};
 
 #[tauri::command]
 pub async fn get_clips(filter_id: Option<String>, limit: i64, offset: i64, preview_only: Option<bool>, db: tauri::State<'_, Arc<Database>>) -> Result<Vec<ClipboardItem>, String> {
     let pool = &db.pool;
     let preview_only = preview_only.unwrap_or(false);
 
-    log::info!("get_clips called with filter_id: {:?}, preview_only: {}", filter_id, preview_only);
+    log::debug!("get_clips called with filter_id: {:?}, preview_only: {}", filter_id, preview_only);
 
     let clips: Vec<Clip> = match filter_id.as_deref() {
         Some(id) => {
             let folder_id_num = id.parse::<i64>().ok();
             if let Some(numeric_id) = folder_id_num {
-                log::info!("Querying for folder_id: {}", numeric_id);
+                log::debug!("Querying for folder_id: {}", numeric_id);
                 sqlx::query_as(r#"
                     SELECT id, uuid, clip_type,
                            CASE WHEN clip_type = 'image' THEN content ELSE '' END as content,
@@ -27,19 +26,23 @@ pub async fn get_clips(filter_id: Option<String>, limit: i64, offset: i64, previ
                            created_at, last_accessed, last_pasted_at, is_pinned,
                            subtype, note, paste_count
                     FROM clips WHERE folder_id = ?
-                    ORDER BY is_pinned DESC, created_at DESC LIMIT ? OFFSET ?
+                    ORDER BY is_pinned DESC,
+                             CASE WHEN note IS NOT NULL AND note != '' THEN 0 ELSE 1 END,
+                             CASE WHEN note IS NOT NULL AND note != '' THEN note ELSE NULL END,
+                             created_at DESC
+                    LIMIT ? OFFSET ?
                 "#)
                 .bind(numeric_id)
                 .bind(limit)
                 .bind(offset)
                 .fetch_all(pool).await.map_err(|e| e.to_string())?
             } else {
-                log::info!("Unknown folder_id, returning empty");
+                log::debug!("Unknown folder_id, returning empty");
                 Vec::new()
             }
         }
         None => {
-            log::info!("Querying for items, offset: {}, limit: {}", offset, limit);
+            log::debug!("Querying for items, offset: {}, limit: {}", offset, limit);
             sqlx::query_as(r#"
                 SELECT id, uuid, clip_type,
                        CASE WHEN clip_type = 'image' THEN content ELSE '' END as content,
@@ -56,7 +59,7 @@ pub async fn get_clips(filter_id: Option<String>, limit: i64, offset: i64, previ
         }
     };
 
-    log::info!("DB: Found {} clips", clips.len());
+    log::debug!("DB: Found {} clips", clips.len());
 
     let mut items = Vec::with_capacity(clips.len());
     for (idx, clip) in clips.iter().enumerate() {
@@ -132,46 +135,17 @@ pub async fn paste_clip(id: String, app: AppHandle, window: tauri::WebviewWindow
 
     match clip {
         Some(clip) => {
-            // Synchronize clipboard access across the app
-            let _guard = crate::clipboard::CLIPBOARD_SYNC.lock().await;
-
             let content_hash = clip.content_hash.clone();
             let uuid = clip.uuid.clone();
 
-            // Stop monitor
-            if let Err(e) = stop_listening().await {
-                 log::error!("Failed to stop listener: {}", e);
-            }
-
-            let mut final_res = Ok(());
-
-            if clip.clip_type == "image" {
-                crate::clipboard::set_ignore_hash(content_hash.clone());
-                crate::clipboard::set_last_stable_hash(content_hash.clone());
-
+            let final_res = if clip.clip_type == "image" {
+                clipboard_set_hashes(&content_hash).await;
                 log::debug!("Frontend handled image. Skipping backend write.");
-
+                Ok(())
             } else {
                 let content_str = String::from_utf8_lossy(&clip.content).to_string();
-                crate::clipboard::set_ignore_hash(content_hash.clone());
-                crate::clipboard::set_last_stable_hash(content_hash.clone());
-
-                let mut last_err = String::new();
-                for i in 0..5 {
-                    // write_text is public function
-                    match write_text(content_str.clone()).await {
-                        Ok(_) => { last_err.clear(); break; },
-                        Err(e) => {
-                            last_err = e.to_string();
-                            log::warn!("ClipPaste clipboard write (text) attempt {} failed: {}. Retrying...", i+1, last_err);
-                            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                        }
-                    }
-                }
-                if !last_err.is_empty() {
-                    final_res = Err(format!("Failed to set clipboard text: {}", last_err));
-                }
-            }
+                clipboard_write_text(&app, &content_str, &content_hash).await
+            };
 
             // Track when this clip was last pasted + increment paste count
             let _ = sqlx::query(r#"UPDATE clips SET last_pasted_at = CURRENT_TIMESTAMP, paste_count = paste_count + 1 WHERE uuid = ?"#)
@@ -179,16 +153,9 @@ pub async fn paste_clip(id: String, app: AppHandle, window: tauri::WebviewWindow
                 .execute(pool)
                 .await;
 
-            // Restart monitor
-            let app_clone = app.clone();
-            if let Err(e) = start_listening(app_clone).await {
-                log::error!("Failed to restart listener: {}", e);
-            }
-
             if final_res.is_ok() {
                 let content = if clip.clip_type == "image" { "[Image]".to_string() } else { String::from_utf8_lossy(&clip.content).to_string() };
                 let _ = window.emit("clipboard-write", &content);
-
                 check_auto_paste_and_hide(&window);
             }
             final_res
@@ -214,44 +181,13 @@ pub async fn copy_clip(id: String, app: AppHandle, db: tauri::State<'_, Arc<Data
 
     match clip {
         Some(clip) => {
-            let _guard = crate::clipboard::CLIPBOARD_SYNC.lock().await;
-
             let content_hash = clip.content_hash.clone();
 
-            if let Err(e) = stop_listening().await {
-                log::error!("Failed to stop listener: {}", e);
-            }
-
-            // Only write text clips — images are handled by frontend navigator.clipboard
             if clip.clip_type != "image" {
                 let content_str = String::from_utf8_lossy(&clip.content).to_string();
-                crate::clipboard::set_ignore_hash(content_hash.clone());
-                crate::clipboard::set_last_stable_hash(content_hash);
-
-                let mut last_err = String::new();
-                for i in 0..5 {
-                    match write_text(content_str.clone()).await {
-                        Ok(_) => { last_err.clear(); break; },
-                        Err(e) => {
-                            last_err = e.to_string();
-                            log::warn!("copy_clip clipboard write attempt {} failed: {}. Retrying...", i+1, last_err);
-                            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                        }
-                    }
-                }
-                if !last_err.is_empty() {
-                    if let Err(e) = start_listening(app.clone()).await {
-                        log::error!("Failed to restart listener: {}", e);
-                    }
-                    return Err(format!("Failed to copy text: {}", last_err));
-                }
+                clipboard_write_text(&app, &content_str, &content_hash).await?;
             } else {
-                crate::clipboard::set_ignore_hash(content_hash.clone());
-                crate::clipboard::set_last_stable_hash(content_hash);
-            }
-
-            if let Err(e) = start_listening(app.clone()).await {
-                log::error!("Failed to restart listener: {}", e);
+                clipboard_set_hashes(&content_hash).await;
             }
 
             // Does NOT hide window or simulate paste
@@ -263,69 +199,37 @@ pub async fn copy_clip(id: String, app: AppHandle, db: tauri::State<'_, Arc<Data
 
 #[tauri::command]
 pub async fn paste_text(content: String, app: AppHandle, window: tauri::WebviewWindow, _db: tauri::State<'_, Arc<Database>>) -> Result<(), String> {
-    let _guard = crate::clipboard::CLIPBOARD_SYNC.lock().await;
-
-    // Compute hash so the monitor ignores this self-write
     let mut hasher = Sha256::new();
     hasher.update(content.as_bytes());
     let content_hash = format!("{:x}", hasher.finalize());
 
-    crate::clipboard::set_ignore_hash(content_hash.clone());
-    crate::clipboard::set_last_stable_hash(content_hash);
-
-    if let Err(e) = stop_listening().await {
-        log::error!("Failed to stop listener: {}", e);
-    }
-
-    let mut last_err = String::new();
-    for i in 0..5 {
-        match write_text(content.clone()).await {
-            Ok(_) => { last_err.clear(); break; }
-            Err(e) => {
-                last_err = e.to_string();
-                log::warn!("paste_text clipboard write attempt {} failed: {}. Retrying...", i + 1, last_err);
-                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-            }
-        }
-    }
-
-    if let Err(e) = start_listening(app.clone()).await {
-        log::error!("Failed to restart listener: {}", e);
-    }
-
-    if !last_err.is_empty() {
-        return Err(format!("Failed to set clipboard text: {}", last_err));
-    }
+    clipboard_write_text(&app, &content, &content_hash).await?;
 
     let _ = window.emit("clipboard-write", &content);
-
     check_auto_paste_and_hide(&window);
 
     Ok(())
 }
 
 #[tauri::command]
-pub async fn delete_clip(id: String, hard_delete: bool, db: tauri::State<'_, Arc<Database>>) -> Result<(), String> {
+pub async fn delete_clip(id: String, db: tauri::State<'_, Arc<Database>>) -> Result<(), String> {
     let pool = &db.pool;
 
-    // Clean up image file from disk if this is an image clip
-    if hard_delete {
-        let clip_info: Option<(String, Vec<u8>)> = sqlx::query_as(
-            "SELECT clip_type, content FROM clips WHERE uuid = ?"
-        ).bind(&id).fetch_optional(pool).await.map_err(|e| e.to_string())?;
+    // Always clean up image file from disk when deleting
+    let clip_info: Option<(String, Vec<u8>)> = sqlx::query_as(
+        "SELECT clip_type, content FROM clips WHERE uuid = ?"
+    ).bind(&id).fetch_optional(pool).await.map_err(|e| e.to_string())?;
 
-        if let Some((clip_type, content)) = &clip_info {
-            if clip_type == "image" {
-                let filename = String::from_utf8_lossy(content).to_string();
-                let image_path = db.images_dir.join(&filename);
-                if image_path.exists() {
-                    let _ = std::fs::remove_file(&image_path);
-                }
+    if let Some((clip_type, content)) = &clip_info {
+        if clip_type == "image" {
+            let filename = String::from_utf8_lossy(content).to_string();
+            let image_path = db.images_dir.join(&filename);
+            if image_path.exists() {
+                let _ = std::fs::remove_file(&image_path);
             }
         }
     }
 
-    // All deletes are hard deletes now (soft-delete removed)
     sqlx::query("DELETE FROM clips WHERE uuid = ?")
         .bind(&id)
         .execute(pool).await.map_err(|e| e.to_string())?;
@@ -349,31 +253,37 @@ pub async fn search_clips(query: String, filter_id: Option<String>, limit: i64, 
         .map(|w| w.to_string())
         .collect();
 
-    // Search ALL clips (cross-folder), but collect folder_id for priority sorting
-    let matched: Vec<(String, Option<i64>)> = {
+    // Search ALL clips (cross-folder), match against preview AND note
+    // Track whether match was in note for priority sorting
+    let matched: Vec<(String, Option<i64>, bool)> = {
         let cache = crate::clipboard::SEARCH_CACHE.read();
         cache.iter()
-            .filter(|(_, preview, _)| {
-                // All words must be present (AND logic) -- supports multi-word search
-                query_words.iter().all(|word| preview.contains(word))
+            .filter_map(|(uuid, preview, fid, note)| {
+                let in_preview = query_words.iter().all(|word| preview.contains(word));
+                let in_note = !note.is_empty() && query_words.iter().all(|word| note.contains(word));
+                if in_preview || in_note {
+                    Some((uuid.clone(), *fid, in_note && !in_preview))
+                } else {
+                    None
+                }
             })
-            .map(|(uuid, _, fid)| (uuid.clone(), *fid))
             .collect()
     };
 
-    // Sort: items in the selected folder first, then items in any folder, then unfiled
+    // Sort: folder priority → note-only matches last → unfiled last
     let mut matched = matched;
-    matched.sort_by_key(|(_, fid)| {
-        if let Some(target_fid) = folder_filter {
-            if *fid == Some(target_fid) { 0 } else if fid.is_some() { 1 } else { 2 }
+    matched.sort_by_key(|(_, fid, note_only)| {
+        let folder_rank = if let Some(target_fid) = folder_filter {
+            if *fid == Some(target_fid) { 0u8 } else if fid.is_some() { 1 } else { 2 }
         } else {
-            // "All" view: prioritize clips in folders over unfiled
             if fid.is_some() { 0 } else { 1 }
-        }
+        };
+        let note_rank = if *note_only { 1u8 } else { 0 };
+        (folder_rank, note_rank)
     });
     let matched: Vec<String> = matched.into_iter()
         .take(limit as usize)
-        .map(|(uuid, _)| uuid)
+        .map(|(uuid, _, _)| uuid)
         .collect();
 
     let mut clips: Vec<Clip> = if matched.is_empty() {
@@ -430,6 +340,73 @@ pub async fn search_clips(query: String, filter_id: Option<String>, limit: i64, 
 }
 
 #[tauri::command]
+pub async fn bulk_delete_clips(ids: Vec<String>, db: tauri::State<'_, Arc<Database>>) -> Result<i64, String> {
+    let pool = &db.pool;
+
+    if ids.is_empty() { return Ok(0); }
+
+    // Collect image filenames before deleting
+    let placeholders: String = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+    let sql = format!(
+        "SELECT clip_type, content FROM clips WHERE uuid IN ({}) AND clip_type = 'image'",
+        placeholders
+    );
+    let mut q = sqlx::query_as::<_, (String, Vec<u8>)>(&sql);
+    for id in &ids { q = q.bind(id); }
+    let image_clips: Vec<(String, Vec<u8>)> = q.fetch_all(pool).await.unwrap_or_default();
+
+    // Delete all clips
+    let del_sql = format!("DELETE FROM clips WHERE uuid IN ({})", placeholders);
+    let mut dq = sqlx::query(&del_sql);
+    for id in &ids { dq = dq.bind(id); }
+    let result = dq.execute(pool).await.map_err(|e| e.to_string())?;
+
+    // Clean up image files
+    for (_, content) in &image_clips {
+        let filename = String::from_utf8_lossy(content).to_string();
+        let image_path = db.images_dir.join(&filename);
+        if image_path.exists() { let _ = std::fs::remove_file(&image_path); }
+    }
+
+    // Remove from search cache
+    for id in &ids {
+        crate::clipboard::remove_from_search_cache(id);
+    }
+
+    Ok(result.rows_affected() as i64)
+}
+
+#[tauri::command]
+pub async fn bulk_move_clips(ids: Vec<String>, folder_id: Option<String>, db: tauri::State<'_, Arc<Database>>) -> Result<(), String> {
+    let pool = &db.pool;
+
+    if ids.is_empty() { return Ok(()); }
+
+    let folder_id_num = match folder_id {
+        Some(id) => Some(id.parse::<i64>().map_err(|_| "Invalid folder ID")?),
+        None => None,
+    };
+
+    let placeholders: String = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+    let sql = format!("UPDATE clips SET folder_id = ? WHERE uuid IN ({})", placeholders);
+    let mut q = sqlx::query(&sql).bind(folder_id_num);
+    for id in &ids { q = q.bind(id); }
+    q.execute(pool).await.map_err(|e| e.to_string())?;
+
+    // Update search cache
+    {
+        let mut cache = crate::clipboard::SEARCH_CACHE.write();
+        for entry in cache.iter_mut() {
+            if ids.contains(&entry.0) {
+                entry.2 = folder_id_num;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn toggle_pin(id: String, db: tauri::State<'_, Arc<Database>>) -> Result<bool, String> {
     let pool = &db.pool;
     sqlx::query("UPDATE clips SET is_pinned = CASE WHEN is_pinned = 0 THEN 1 ELSE 0 END WHERE uuid = ?")
@@ -450,5 +427,9 @@ pub async fn update_note(id: String, note: Option<String>, db: tauri::State<'_, 
         .bind(&note)
         .bind(&id)
         .execute(pool).await.map_err(|e| e.to_string())?;
+
+    // Update search cache with new note
+    crate::clipboard::update_note_in_search_cache(&id, note.as_deref());
+
     Ok(())
 }

@@ -134,7 +134,7 @@ pub async fn set_data_directory(
 pub async fn pick_file() -> Result<String, String> {
     use std::process::Command;
     #[cfg(target_os = "windows")]
-    {
+    let path = {
         let ps_script = "Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.OpenFileDialog; $d.Filter = 'Executables (*.exe)|*.exe|All files (*.*)|*.*'; $null = $d.ShowDialog(); $d.FileName";
         let output = Command::new("powershell")
             .args(["-NoProfile", "-Command", ps_script])
@@ -142,43 +142,50 @@ pub async fn pick_file() -> Result<String, String> {
             .map_err(|e| e.to_string())?;
 
         if output.status.success() {
-            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if path.is_empty() {
+            let p = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if p.is_empty() {
                 return Err("No file selected".to_string());
             }
-            Ok(path)
+            p
         } else {
-            Err("Failed to open file picker".to_string())
+            return Err("Failed to open file picker".to_string());
         }
-    }
+    };
     #[cfg(target_os = "macos")]
-    {
+    let path = {
         let output = Command::new("osascript")
             .args(["-e", "POSIX path of (choose file)"])
             .output()
             .map_err(|e| e.to_string())?;
         if output.status.success() {
-            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if path.is_empty() { return Err("No file selected".to_string()); }
-            Ok(path)
+            let p = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if p.is_empty() { return Err("No file selected".to_string()); }
+            p
         } else {
-            Err("No file selected".to_string())
+            return Err("No file selected".to_string());
         }
-    }
+    };
     #[cfg(target_os = "linux")]
-    {
+    let path = {
         let output = Command::new("zenity")
             .args(["--file-selection"])
             .output()
             .map_err(|e| e.to_string())?;
         if output.status.success() {
-            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if path.is_empty() { return Err("No file selected".to_string()); }
-            Ok(path)
+            let p = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if p.is_empty() { return Err("No file selected".to_string()); }
+            p
         } else {
-            Err("No file selected".to_string())
+            return Err("No file selected".to_string());
         }
+    };
+
+    // Sanitize: reject path traversal and control characters
+    if path.contains("..") || path.chars().any(|c| c.is_control()) {
+        return Err("Invalid file path".to_string());
     }
+
+    Ok(path)
 }
 
 #[tauri::command]
@@ -363,6 +370,22 @@ pub async fn export_data(_app: AppHandle, db: tauri::State<'_, Arc<Database>>) -
         Ok(())
     }).await.map_err(|e| e.to_string())??;
 
+    // Verify zip integrity by attempting to open and read the archive
+    let verify_path = save_path.clone();
+    tokio::task::spawn_blocking(move || -> Result<(), String> {
+        let file = std::fs::File::open(&verify_path)
+            .map_err(|e| format!("Export verification failed: cannot open zip: {}", e))?;
+        let mut archive = zip::ZipArchive::new(file)
+            .map_err(|e| format!("Export verification failed: invalid zip: {}", e))?;
+        let has_db = (0..archive.len()).any(|i| {
+            archive.by_index_raw(i).map(|f| f.name() == "clipboard.db").unwrap_or(false)
+        });
+        if !has_db {
+            return Err("Export verification failed: clipboard.db not found in archive".to_string());
+        }
+        Ok(())
+    }).await.map_err(|e| e.to_string())??;
+
     log::info!("Exported backup to: {}", save_path);
     Ok(save_path)
 }
@@ -464,6 +487,10 @@ pub async fn import_data(app: AppHandle, db: tauri::State<'_, Arc<Database>>) ->
     }).await.map_err(|e| e.to_string())??;
 
     log::info!("Imported backup from zip");
+
+    // Rebuild in-memory caches from the imported DB
+    crate::clipboard::load_search_cache(&db.pool).await;
+    crate::clipboard::load_settings_cache(&db.pool).await;
 
     // Notify frontend to restart
     let _ = app.emit("data-directory-changed", &serde_json::json!({

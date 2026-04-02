@@ -163,6 +163,27 @@ pub fn run_app() {
                     });
                 }
                 tauri::WindowEvent::Focused(focused) => {
+                    // Apply window effect to settings window on first focus
+                    if *focused && window.label() == "settings" {
+                        let app_handle = window.app_handle().clone();
+                        let win = window.clone();
+                        let db = window.state::<Arc<Database>>().inner().clone();
+                        tauri::async_runtime::spawn(async move {
+                            let theme_str = db.get_setting("theme").await.ok().flatten().unwrap_or_else(|| "system".to_string());
+                            let mica_effect = db.get_setting("mica_effect").await.ok().flatten().unwrap_or_else(|| "clear".to_string());
+                            let current_theme = if theme_str == "light" {
+                                tauri::Theme::Light
+                            } else if theme_str == "dark" {
+                                tauri::Theme::Dark
+                            } else {
+                                win.theme().unwrap_or(tauri::Theme::Dark)
+                            };
+                            if let Some(settings_win) = app_handle.get_webview_window("settings") {
+                                crate::apply_window_effect(&settings_win, &mica_effect, &current_theme);
+                            }
+                        });
+                    }
+
                     if !focused {
                         let label = window.label();
                         // Only auto-hide the main window
@@ -413,6 +434,8 @@ pub fn run_app() {
             commands::paste_text,
             commands::set_dragging,
             commands::update_note,
+            commands::bulk_delete_clips,
+            commands::bulk_move_clips,
             commands::export_data,
             commands::import_data,
             commands::get_dashboard_stats,

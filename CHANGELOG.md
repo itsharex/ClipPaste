@@ -7,7 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [1.6.5] - 2026-04-02
+
+### Added
+- **Batch operations** — Ctrl+Click / Shift+Click to multi-select clips; bulk paste (joined by newline), delete, and move to folder via floating action bar
+- **Search notes** — search now matches against clip notes in addition to content; note results sorted after content matches
+- **Folder sort by note** — clips in folders sorted: pinned → has note (A→Z) → no note (newest first)
+- **Mica effect on settings window** — settings window now applies same window effect as main window
+- **Delete confirmation** — toast-based confirm before deleting clips (single and bulk)
+- **Zip export verification** — exported backup zip is verified for integrity after creation
+
+### Changed
+- **Esc key chain** — progressive dismiss: multi-select → search → selected clip → folder → hide window
+- **Folder persistence** — selected folder is kept when window reopens (not reset to All)
+- **Drag-to-external hides window** — dragging a clip to an external app now auto-hides the window
+- **Mouse wheel scroll** — improved scroll speed for mouse wheel (2.5x multiplier) while keeping trackpad smooth
+- **Focus debounce** — window focus reload debounced 150ms to prevent query spam on rapid Alt+Tab
+- **Log levels** — hot-path logs (get_clips, clipboard processing) reduced from info to debug/trace
+- **EditClipModal** — UI text translated from Vietnamese to English
+- **Clipboard write helper** — extracted shared clipboard write logic (stop listener → retry 5x → restart) into `clipboard_write_text()` helper
+
+### Fixed
+- **delete_clip orphan images** — always clean up image files on delete (previously only cleaned when `hard_delete=true`)
+- **enforce_max_items race** — image filename query now matches exact rows being deleted via subquery
+- **SEARCH_CACHE sync** — cache updated on move_to_folder, bulk_move, and update_note (previously stale until restart)
+- **Import cache rebuild** — SEARCH_CACHE and SETTINGS_CACHE rebuilt after importing backup
+- **pick_file path sanitization** — output path validated against path traversal and control characters
+
+### Removed
+- **Ctrl+1..9 quick-paste** — removed index badges from clip cards (feature was not functional)
 
 ---
 

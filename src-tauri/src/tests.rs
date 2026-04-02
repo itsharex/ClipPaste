@@ -228,7 +228,7 @@ mod tests {
             add_to_search_cache(uuid, preview, folder_id);
 
             let cache = SEARCH_CACHE.read();
-            let found = cache.iter().any(|(u, p, f)| u == uuid && p == "some preview text" && *f == folder_id);
+            let found = cache.iter().any(|(u, p, f, _)| u == uuid && p == "some preview text" && *f == folder_id);
             assert!(found, "Entry should be found in search cache after add");
 
             // Cleanup
@@ -244,14 +244,14 @@ mod tests {
             // Verify it was added
             {
                 let cache = SEARCH_CACHE.read();
-                assert!(cache.iter().any(|(u, _, _)| u == uuid));
+                assert!(cache.iter().any(|(u, _, _, _)| u == uuid));
             }
 
             remove_from_search_cache(uuid);
 
             // Verify it was removed
             let cache = SEARCH_CACHE.read();
-            assert!(!cache.iter().any(|(u, _, _)| u == uuid),
+            assert!(!cache.iter().any(|(u, _, _, _)| u == uuid),
                 "Entry should not be found in search cache after remove");
         }
 
@@ -269,9 +269,9 @@ mod tests {
             remove_from_search_cache(uuid2);
 
             let cache = SEARCH_CACHE.read();
-            assert!(cache.iter().any(|(u, _, _)| u == uuid1), "First entry should still be present");
-            assert!(!cache.iter().any(|(u, _, _)| u == uuid2), "Second entry should be removed");
-            assert!(cache.iter().any(|(u, _, _)| u == uuid3), "Third entry should still be present");
+            assert!(cache.iter().any(|(u, _, _, _)| u == uuid1), "First entry should still be present");
+            assert!(!cache.iter().any(|(u, _, _, _)| u == uuid2), "Second entry should be removed");
+            assert!(cache.iter().any(|(u, _, _, _)| u == uuid3), "Third entry should still be present");
 
             // Cleanup
             drop(cache);
@@ -374,8 +374,8 @@ mod tests {
             {
                 let cache = SEARCH_CACHE.read();
                 let results: Vec<&str> = cache.iter()
-                    .filter(|(u, p, _)| u.starts_with(prefix) && p.contains("hello"))
-                    .map(|(u, _, _)| u.as_str())
+                    .filter(|(u, p, _, _)| u.starts_with(prefix) && p.contains("hello"))
+                    .map(|(u, _, _, _)| u.as_str())
                     .collect();
                 assert_eq!(results.len(), 2, "Single word 'hello' should match 2 entries");
                 assert!(results.contains(&uuid1.as_str()));
@@ -387,8 +387,8 @@ mod tests {
                 let cache = SEARCH_CACHE.read();
                 let words = vec!["hello", "rust"];
                 let results: Vec<&str> = cache.iter()
-                    .filter(|(u, p, _)| u.starts_with(prefix) && words.iter().all(|w| p.contains(w)))
-                    .map(|(u, _, _)| u.as_str())
+                    .filter(|(u, p, _, _)| u.starts_with(prefix) && words.iter().all(|w| p.contains(w)))
+                    .map(|(u, _, _, _)| u.as_str())
                     .collect();
                 assert_eq!(results.len(), 1, "Multi-word 'hello rust' should match 1 entry");
                 assert_eq!(results[0], uuid1.as_str());
@@ -399,8 +399,8 @@ mod tests {
                 let cache = SEARCH_CACHE.read();
                 let words = vec!["world", "from"];
                 let results: Vec<&str> = cache.iter()
-                    .filter(|(u, p, _)| u.starts_with(prefix) && words.iter().all(|w| p.contains(w)))
-                    .map(|(u, _, _)| u.as_str())
+                    .filter(|(u, p, _, _)| u.starts_with(prefix) && words.iter().all(|w| p.contains(w)))
+                    .map(|(u, _, _, _)| u.as_str())
                     .collect();
                 assert_eq!(results.len(), 2, "Multi-word 'world from' should match 2 entries");
             }
@@ -410,8 +410,8 @@ mod tests {
             {
                 let cache = SEARCH_CACHE.read();
                 let results: Vec<&str> = cache.iter()
-                    .filter(|(u, p, _)| u.starts_with(prefix) && p.contains("world"))
-                    .map(|(u, _, _)| u.as_str())
+                    .filter(|(u, p, _, _)| u.starts_with(prefix) && p.contains("world"))
+                    .map(|(u, _, _, _)| u.as_str())
                     .collect();
                 assert_eq!(results.len(), 1, "After removing uuid2, 'world' should match only uuid1");
                 assert_eq!(results[0], uuid1.as_str());
@@ -421,8 +421,8 @@ mod tests {
             {
                 let cache = SEARCH_CACHE.read();
                 let results: Vec<&str> = cache.iter()
-                    .filter(|(u, p, _)| u.starts_with(prefix) && p.contains("nonexistentxyz"))
-                    .map(|(u, _, _)| u.as_str())
+                    .filter(|(u, p, _, _)| u.starts_with(prefix) && p.contains("nonexistentxyz"))
+                    .map(|(u, _, _, _)| u.as_str())
                     .collect();
                 assert!(results.is_empty(), "Nonexistent query should return no results");
             }
@@ -431,8 +431,8 @@ mod tests {
             {
                 let cache = SEARCH_CACHE.read();
                 let results: Vec<&str> = cache.iter()
-                    .filter(|(u, p, fid)| u.starts_with(prefix) && p.contains("hello") && *fid == Some(1))
-                    .map(|(u, _, _)| u.as_str())
+                    .filter(|(u, p, fid, _)| u.starts_with(prefix) && p.contains("hello") && *fid == Some(1))
+                    .map(|(u, _, _, _)| u.as_str())
                     .collect();
                 assert_eq!(results.len(), 1, "Folder-filtered search should match 1 entry");
                 assert_eq!(results[0], uuid1.as_str());

@@ -39,10 +39,15 @@ export function useDragDrop(opts: UseDragDropOpts) {
   }, []);
 
   const handleNativeDragEnd = useCallback(() => {
-    // Check if we dropped on a folder target
     const { clipId, targetFolderId } = dragStateRef.current;
-    if (clipId && targetFolderId !== undefined && targetFolderId !== 'NO_TARGET') {
-      handleMoveClip(clipId, targetFolderId);
+    const droppedOnFolder = clipId && targetFolderId !== undefined && targetFolderId !== 'NO_TARGET';
+
+    if (droppedOnFolder) {
+      // Dropped on a folder tab — move clip
+      handleMoveClip(clipId!, targetFolderId);
+    } else if (clipId) {
+      // Dropped externally (another app) — hide window
+      invoke('hide_window').catch(console.error);
     }
 
     isDraggingExternalRef.current = false;

@@ -51,9 +51,9 @@ static HASH_STATE: Lazy<parking_lot::Mutex<ClipboardHashState>> = Lazy::new(|| {
 });
 pub static CLIPBOARD_SYNC: Lazy<Arc<tokio::sync::Mutex<()>>> = Lazy::new(|| Arc::new(tokio::sync::Mutex::new(())));
 
-/// In-memory search index: (uuid, preview_lowercase, folder_id)
+/// In-memory search index: (uuid, preview_lowercase, folder_id, note_lowercase)
 /// Loaded once at startup, updated on each clipboard change. Avoids slow SQLite full-table scans.
-pub static SEARCH_CACHE: Lazy<parking_lot::RwLock<Vec<(String, String, Option<i64>)>>> =
+pub static SEARCH_CACHE: Lazy<parking_lot::RwLock<Vec<(String, String, Option<i64>, String)>>> =
     Lazy::new(|| parking_lot::RwLock::new(Vec::new()));
 
 /// In-memory settings cache: avoids DB round-trips for hot-path settings like auto_paste, ignore_ghost_clips.
@@ -69,12 +69,12 @@ static DEBOUNCE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Load all clip previews into memory for instant search
 pub async fn load_search_cache(pool: &sqlx::SqlitePool) {
-    let rows: Vec<(String, String, Option<i64>)> = sqlx::query_as(
-        "SELECT uuid, COALESCE(text_preview, ''), folder_id FROM clips"
+    let rows: Vec<(String, String, Option<i64>, Option<String>)> = sqlx::query_as(
+        "SELECT uuid, COALESCE(text_preview, ''), folder_id, note FROM clips"
     ).fetch_all(pool).await.unwrap_or_default();
 
-    let entries: Vec<(String, String, Option<i64>)> = rows.into_iter()
-        .map(|(uuid, preview, fid)| (uuid, preview.to_lowercase(), fid))
+    let entries: Vec<(String, String, Option<i64>, String)> = rows.into_iter()
+        .map(|(uuid, preview, fid, note)| (uuid, preview.to_lowercase(), fid, note.unwrap_or_default().to_lowercase()))
         .collect();
 
     let count = entries.len();
@@ -85,13 +85,21 @@ pub async fn load_search_cache(pool: &sqlx::SqlitePool) {
 /// Add a single clip to the search cache
 pub fn add_to_search_cache(uuid: &str, preview: &str, folder_id: Option<i64>) {
     let mut cache = SEARCH_CACHE.write();
-    cache.push((uuid.to_string(), preview.to_lowercase(), folder_id));
+    cache.push((uuid.to_string(), preview.to_lowercase(), folder_id, String::new()));
 }
 
 /// Remove a clip from the search cache
 pub fn remove_from_search_cache(uuid: &str) {
     let mut cache = SEARCH_CACHE.write();
-    cache.retain(|(u, _, _)| u != uuid);
+    cache.retain(|(u, _, _, _)| u != uuid);
+}
+
+/// Update a clip's note in the search cache
+pub fn update_note_in_search_cache(uuid: &str, note: Option<&str>) {
+    let mut cache = SEARCH_CACHE.write();
+    if let Some(entry) = cache.iter_mut().find(|(u, _, _, _)| u == uuid) {
+        entry.3 = note.unwrap_or_default().to_lowercase();
+    }
 }
 
 /// Load all settings into memory for instant access
@@ -288,7 +296,7 @@ async fn process_clipboard_change(app: AppHandle, db: Arc<Database>, source_app_
                  clip_preview = truncate_utf8(text, 2000).to_string();
                  clip_subtype = detect_subtype(text);
                  found_content = true;
-                log::debug!("CLIPBOARD: Found text ({} chars, subtype: {:?})", clip_preview.len(), clip_subtype);
+                log::trace!("CLIPBOARD: Found text ({} chars, subtype: {:?})", clip_preview.len(), clip_subtype);
              }
         }
     }
@@ -315,7 +323,7 @@ async fn process_clipboard_change(app: AppHandle, db: Arc<Database>, source_app_
 
     // Source app info was captured before debounce to ensure accuracy on macOS
     let (source_app, source_icon, exe_name, full_path, is_explicit_owner) = source_app_info;
-    log::info!("CLIPBOARD: Source app: {:?}, explicit: {}", source_app, is_explicit_owner);
+    log::debug!("CLIPBOARD: Source app: {:?}, explicit: {}", source_app, is_explicit_owner);
 
     // Check ignore_ghost_clips setting (from in-memory cache, no DB round-trip)
     let ignore_ghost_clips = get_cached_setting("ignore_ghost_clips")

@@ -219,9 +219,10 @@ impl Database {
 
         // Collect image filenames before deleting (within same transaction)
         // Only from unprotected clips (not in folder, not pinned)
+        // Must match the same ORDER BY as the DELETE to get the correct files
         let image_clips: Vec<(Vec<u8>,)> = sqlx::query_as(
             "SELECT content FROM clips WHERE folder_id IS NULL AND is_pinned = 0 AND clip_type = 'image'
-             ORDER BY created_at ASC LIMIT ?"
+             AND id IN (SELECT id FROM clips WHERE folder_id IS NULL AND is_pinned = 0 ORDER BY created_at ASC LIMIT ?)"
         ).bind(excess).fetch_all(&mut *tx).await.unwrap_or_default();
 
         // Delete oldest unprotected clips (folder + pinned items are safe)

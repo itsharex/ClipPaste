@@ -26,6 +26,7 @@ function App() {
   const [showSearch, setShowSearch] = useState(false);
   const [contentTypeFilter, setContentTypeFilter] = useState<ClipType | null>(null);
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
+  const [selectedClipIds, setSelectedClipIds] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
   const [hasMore, setHasMore] = useState(true);
   const [theme, setTheme] = useState('system');
@@ -170,17 +171,23 @@ function App() {
   }, []);
 
   // Reset selection, clear search, reload clips, and scroll to top every time the window is shown/focused
+  // Debounced to avoid spam queries on rapid Alt+Tab toggles
+  const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     const unlisten = appWindow.listen('tauri://focus', () => {
-      setSelectedClipId(null);
-      setSelectedFolder(null);
-      setSearchQuery('');
-      setSearchInput('');
-      setContentTypeFilter(null);
-      setPreviewFolder(undefined);
-      autoSelectFirstOnNextLoadRef.current = true;
-      setWindowFocusCount((c) => c + 1);
-      loadClipsRef.current(null, false, '');
+      if (focusTimerRef.current) clearTimeout(focusTimerRef.current);
+      focusTimerRef.current = setTimeout(() => {
+        setSelectedClipId(null);
+        setSelectedClipIds(new Set());
+        // Keep selectedFolder — user stays in their folder across window toggles
+        setSearchQuery('');
+        setSearchInput('');
+        setContentTypeFilter(null);
+        setPreviewFolder(undefined);
+        autoSelectFirstOnNextLoadRef.current = true;
+        setWindowFocusCount((c) => c + 1);
+        loadClipsRef.current(selectedFolderRef.current, false, '');
+      }, 150);
     });
     return () => {
       unlisten.then((f) => f());
@@ -261,7 +268,23 @@ function App() {
 
   // --- Keyboard shortcuts ---
   useKeyboard({
-    onClose: () => { if (!editingClip) appWindow.hide(); },
+    onClose: () => {
+      if (editingClip) return;
+      // Esc priority: multi-select → search → selected clip → folder → hide window
+      if (isMultiSelect) {
+        setSelectedClipIds(new Set());
+        setSelectedClipId(null);
+      } else if (searchInput.trim()) {
+        handleSearch('');
+        searchInputRef.current?.focus();
+      } else if (selectedClipId) {
+        setSelectedClipId(null);
+      } else if (selectedFolder) {
+        setSelectedFolder(null);
+      } else {
+        appWindow.hide();
+      }
+    },
     onSearch: () => {
       if (editingClip) return;
       setShowSearch(true);
@@ -269,7 +292,11 @@ function App() {
         searchInputRef.current?.focus();
       }, 50);
     },
-    onDelete: () => { if (!editingClip) handleDelete(selectedClipId); },
+    onDelete: () => {
+      if (editingClip) return;
+      if (isMultiSelect) { handleBulkDelete(); }
+      else { handleDelete(selectedClipId); }
+    },
     onNavigateUp: () => {
       if (editingClip || isLoading) return;
       const currentIndex = clips.findIndex((c) => c.id === selectedClipId);
@@ -287,9 +314,9 @@ function App() {
       }
     },
     onPaste: () => {
-      if (selectedClipId && !editingClip) {
-        handlePaste(selectedClipId);
-      }
+      if (editingClip) return;
+      if (isMultiSelect) { handleBulkPaste(); }
+      else if (selectedClipId) { handlePaste(selectedClipId); }
     },
     onEdit: () => {
       if (selectedClipId && !editingClip) {
@@ -390,6 +417,118 @@ function App() {
       }
     }
   };
+
+  // --- Multi-select ---
+  const handleSelectClip = useCallback((clipId: string, e?: React.MouseEvent) => {
+    const displayedClips = isPreviewing ? filteredPreviewClips : filteredClips;
+
+    if (e?.shiftKey && selectedClipId) {
+      // Range select: from last selected to clicked
+      const startIdx = displayedClips.findIndex(c => c.id === selectedClipId);
+      const endIdx = displayedClips.findIndex(c => c.id === clipId);
+      if (startIdx !== -1 && endIdx !== -1) {
+        const [from, to] = startIdx < endIdx ? [startIdx, endIdx] : [endIdx, startIdx];
+        const rangeIds = displayedClips.slice(from, to + 1).map(c => c.id);
+        setSelectedClipIds(prev => {
+          const next = new Set(prev);
+          if (selectedClipId && !next.has(selectedClipId)) {
+            next.add(selectedClipId);
+          }
+          rangeIds.forEach(id => next.add(id));
+          return next;
+        });
+      }
+    } else if (e?.ctrlKey || e?.metaKey) {
+      // Toggle select — also include the currently selected clip if not yet in set
+      setSelectedClipIds(prev => {
+        const next = new Set(prev);
+        if (selectedClipId && !next.has(selectedClipId)) {
+          next.add(selectedClipId);
+        }
+        if (next.has(clipId)) {
+          next.delete(clipId);
+        } else {
+          next.add(clipId);
+        }
+        return next;
+      });
+    } else {
+      // Single select — clear multi-select
+      setSelectedClipIds(new Set());
+    }
+    setSelectedClipId(clipId);
+  }, [selectedClipId, isPreviewing, filteredPreviewClips, filteredClips]);
+
+  const isMultiSelect = selectedClipIds.size > 1;
+
+  const handleBulkDelete = useCallback(async () => {
+    if (selectedClipIds.size === 0) return;
+    const ids = Array.from(selectedClipIds);
+    toast(`Delete ${ids.length} clips?`, {
+      action: {
+        label: 'Delete',
+        onClick: async () => {
+          try {
+            const count = await invoke<number>('bulk_delete_clips', { ids });
+            setClips(prev => prev.filter(c => !selectedClipIds.has(c.id)));
+            setSelectedClipIds(new Set());
+            setSelectedClipId(null);
+            loadFolders();
+            refreshTotalCount();
+            toast.success(`Deleted ${count} clips`);
+          } catch (error) {
+            console.error('Bulk delete failed:', error);
+            toast.error('Failed to delete clips');
+          }
+        },
+      },
+      cancel: { label: 'Cancel', onClick: () => {} },
+      duration: 4000,
+    });
+  }, [selectedClipIds, setClips, loadFolders, refreshTotalCount]);
+
+  const handleBulkMove = useCallback(async (folderId: string | null) => {
+    if (selectedClipIds.size === 0) return;
+    const ids = Array.from(selectedClipIds);
+    try {
+      await invoke('bulk_move_clips', { ids, folderId });
+      if (selectedFolder && folderId !== selectedFolder) {
+        setClips(prev => prev.filter(c => !selectedClipIds.has(c.id)));
+      } else {
+        setClips(prev => prev.map(c => selectedClipIds.has(c.id) ? { ...c, folder_id: folderId } : c));
+      }
+      setSelectedClipIds(new Set());
+      setSelectedClipId(null);
+      loadFolders();
+      refreshTotalCount();
+      toast.success(`Moved ${ids.length} clips`);
+    } catch (error) {
+      console.error('Bulk move failed:', error);
+      toast.error('Failed to move clips');
+    }
+  }, [selectedClipIds, selectedFolder, setClips, loadFolders, refreshTotalCount]);
+
+  const handleBulkPaste = useCallback(async () => {
+    if (selectedClipIds.size === 0) return;
+    const displayedClips = isPreviewing ? filteredPreviewClips : filteredClips;
+    // Collect selected clips in display order, skip images
+    const textsInOrder = displayedClips
+      .filter(c => selectedClipIds.has(c.id) && c.clip_type !== 'image')
+      .map(c => c.content);
+    if (textsInOrder.length === 0) {
+      toast.error('No text clips selected');
+      return;
+    }
+    const combined = textsInOrder.join('\n');
+    try {
+      await invoke('paste_text', { content: combined });
+      setSelectedClipIds(new Set());
+      setSelectedClipId(null);
+    } catch (error) {
+      console.error('Bulk paste failed:', error);
+      toast.error('Failed to paste');
+    }
+  }, [selectedClipIds, isPreviewing, filteredPreviewClips, filteredClips]);
 
   // --- Render ---
   return (
@@ -522,7 +661,8 @@ function App() {
               isLoading={isPreviewing ? isPreviewLoading : isLoading}
               hasMore={isPreviewing ? false : hasMore}
               selectedClipId={selectedClipId}
-              onSelectClip={setSelectedClipId}
+              selectedClipIds={selectedClipIds}
+              onSelectClip={handleSelectClip}
               onPaste={handlePaste}
               onCopy={handleCopy}
               onPin={handleTogglePin}
@@ -538,6 +678,53 @@ function App() {
               searchQuery={searchQuery}
             />
           </main>
+
+          {/* Batch action bar — floating overlay */}
+          {isMultiSelect && (
+            <div className="pointer-events-none absolute bottom-6 left-0 right-0 z-40 flex justify-center">
+              <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-border/50 bg-background/95 px-4 py-2 shadow-xl backdrop-blur-md">
+                <span className="text-xs font-semibold text-primary">{selectedClipIds.size} selected</span>
+                <div className="h-3.5 w-px bg-border/50" />
+                <button
+                  onClick={handleBulkPaste}
+                  className="rounded-full bg-primary/15 px-3 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/25"
+                >
+                  Paste
+                </button>
+                <button
+                  onClick={handleBulkDelete}
+                  className="rounded-full bg-destructive/15 px-3 py-1 text-xs font-medium text-destructive transition-colors hover:bg-destructive/25"
+                >
+                  Delete
+                </button>
+                {folders.length > 0 && (
+                  <select
+                    defaultValue=""
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === '__none__') handleBulkMove(null);
+                      else if (val) handleBulkMove(val);
+                      e.target.value = '';
+                    }}
+                    className="rounded-full border border-border/50 bg-card px-2.5 py-1 text-xs text-foreground"
+                  >
+                    <option value="" disabled>Move to...</option>
+                    <option value="__none__">All (remove from folder)</option>
+                    {folders.map(f => (
+                      <option key={f.id} value={f.id}>{f.name}</option>
+                    ))}
+                  </select>
+                )}
+                <div className="h-3.5 w-px bg-border/50" />
+                <button
+                  onClick={() => { setSelectedClipIds(new Set()); setSelectedClipId(null); }}
+                  className="rounded-full px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
 
           <FolderModal
             isOpen={showAddFolderModal}
