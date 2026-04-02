@@ -35,6 +35,8 @@ interface DashboardTabProps {
   setDashDate: (v: string) => void;
   dashSearch: string;
   setDashSearch: (v: string) => void;
+  dashSourceApp: string | null;
+  setDashSourceApp: (v: string | null) => void;
   dashClips: DashClip[];
   dashClipsLoading: boolean;
 }
@@ -68,6 +70,8 @@ export function DashboardTab({
   setDashDate,
   dashSearch,
   setDashSearch,
+  dashSourceApp,
+  setDashSourceApp,
   dashClips,
   dashClipsLoading,
 }: DashboardTabProps) {
@@ -138,6 +142,19 @@ export function DashboardTab({
             placeholder="Search in this day..."
             className="flex-1 rounded-lg border border-border bg-input px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
           />
+          {dashStats && dashStats.top_apps.length > 0 && (
+            <select
+              value={dashSourceApp || ''}
+              onChange={(e) => setDashSourceApp(e.target.value || null)}
+              className="rounded-lg border border-border bg-input px-2 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              style={{ colorScheme: 'dark', maxWidth: 130 }}
+            >
+              <option value="">All apps</option>
+              {dashStats.top_apps.map((app) => (
+                <option key={app.app} value={app.app}>{app.app}</option>
+              ))}
+            </select>
+          )}
         </div>
       </section>
 
@@ -234,7 +251,11 @@ export function DashboardTab({
             {(() => {
               const maxApp = Math.max(...dashStats.top_apps.map(a => a.count), 1);
               return dashStats.top_apps.map((app) => (
-                <div key={app.app} className="flex items-center gap-3">
+                <div
+                  key={app.app}
+                  className={clsx('flex cursor-pointer items-center gap-3 rounded-md px-1 py-0.5 transition-colors hover:bg-accent/30', dashSourceApp === app.app && 'bg-indigo-500/15 ring-1 ring-indigo-500/30')}
+                  onClick={() => setDashSourceApp(dashSourceApp === app.app ? null : app.app)}
+                >
                   <div className="flex h-6 w-6 items-center justify-center rounded-md bg-indigo-500/20 text-[9px] font-bold text-indigo-300">
                     {app.app.substring(0, 2).toUpperCase()}
                   </div>

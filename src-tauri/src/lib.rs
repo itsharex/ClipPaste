@@ -368,8 +368,9 @@ pub fn run_app() {
             tauri::async_runtime::spawn(async move {
                 clipboard::load_search_cache(&db_for_cache.pool).await;
                 clipboard::load_settings_cache(&db_for_cache.pool).await;
-                // Enforce max_items + clean up orphan images on startup
+                // Enforce max_items + auto_delete_days + clean up orphan images on startup
                 db_for_cache.enforce_max_items().await;
+                db_for_cache.enforce_auto_delete().await;
                 db_for_cache.cleanup_orphan_images().await;
             });
 

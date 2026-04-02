@@ -249,6 +249,42 @@ impl Database {
         }
     }
 
+    /// Delete clips older than auto_delete_days (only unprotected: not in folder, not pinned).
+    pub async fn enforce_auto_delete(&self) {
+        let days: Option<i64> = sqlx::query_scalar("SELECT value FROM settings WHERE key = 'auto_delete_days'")
+            .fetch_optional(&self.pool).await.unwrap_or(None)
+            .and_then(|v: String| v.parse().ok());
+
+        let days = match days {
+            Some(v) if v > 0 => v,
+            _ => return, // 0 or not set = disabled
+        };
+
+        // Collect image filenames before deleting
+        let image_clips: Vec<(Vec<u8>,)> = sqlx::query_as(
+            "SELECT content FROM clips WHERE folder_id IS NULL AND is_pinned = 0 AND clip_type = 'image'
+             AND created_at < datetime('now', '-' || ? || ' days')"
+        ).bind(days).fetch_all(&self.pool).await.unwrap_or_default();
+
+        let result = sqlx::query(
+            "DELETE FROM clips WHERE folder_id IS NULL AND is_pinned = 0
+             AND created_at < datetime('now', '-' || ? || ' days')"
+        ).bind(days).execute(&self.pool).await;
+
+        match result {
+            Ok(r) if r.rows_affected() > 0 => {
+                log::info!("DB: Auto-deleted {} clips older than {} days", r.rows_affected(), days);
+                for (content,) in &image_clips {
+                    let filename = String::from_utf8_lossy(content).to_string();
+                    let path = self.images_dir.join(&filename);
+                    if path.exists() { let _ = std::fs::remove_file(&path); }
+                }
+            }
+            Err(e) => log::error!("enforce_auto_delete failed: {}", e),
+            _ => {}
+        }
+    }
+
     /// Clean up orphan image files (files in images/ that have no matching clip)
     pub async fn cleanup_orphan_images(&self) {
         let entries = match std::fs::read_dir(&self.images_dir) {

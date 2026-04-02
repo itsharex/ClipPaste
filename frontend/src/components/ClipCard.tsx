@@ -389,7 +389,9 @@ export const ClipCard = memo(function ClipCard({
             )}
           </span>
         </div>
+
       </div>
+
     </div>
   );
 });

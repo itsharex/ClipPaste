@@ -4,6 +4,7 @@ import {
   Settings as SettingsIcon,
   Folder as FolderIcon,
   BarChart3,
+  Keyboard,
 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { useTheme } from '../hooks/useTheme';
@@ -21,13 +22,14 @@ import { clsx } from 'clsx';
 import { DashboardTab } from './settings/DashboardTab';
 import { GeneralTab } from './settings/GeneralTab';
 import { FoldersTab } from './settings/FoldersTab';
+import { HotkeysTab } from './settings/HotkeysTab';
 
 interface SettingsPanelProps {
   settings: Settings;
   onClose: () => void;
 }
 
-type Tab = 'dashboard' | 'general' | 'folders';
+type Tab = 'dashboard' | 'general' | 'folders' | 'hotkeys';
 
 interface DashboardStats {
   total: number;
@@ -64,6 +66,7 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
   const [dashStats, setDashStats] = useState<DashboardStats | null>(null);
   const [dashDate, setDashDate] = useState(toDateStr(new Date()));
   const [dashSearch, setDashSearch] = useState('');
+  const [dashSourceApp, setDashSourceApp] = useState<string | null>(null);
   const [dashClips, setDashClips] = useState<{ id: string; clip_type: string; content: string; preview: string; created_at: string; source_app: string | null; subtype: string | null }[]>([]);
   const [dashClipsLoading, setDashClipsLoading] = useState(false);
 
@@ -184,11 +187,12 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
     if (activeTab !== 'dashboard') return;
     setDashClipsLoading(true);
     const search = debouncedDashSearch.trim() || undefined;
-    invoke<typeof dashClips>('get_clips_by_date', { date: dashDate, search })
+    const sourceApp = dashSourceApp || undefined;
+    invoke<typeof dashClips>('get_clips_by_date', { date: dashDate, search, sourceApp })
       .then(setDashClips)
       .catch(console.error)
       .finally(() => setDashClipsLoading(false));
-  }, [dashDate, debouncedDashSearch, activeTab]);
+  }, [dashDate, debouncedDashSearch, dashSourceApp, activeTab]);
 
   // Format shortcut array into Tauri-compatible string
   const formatHotkey = (keys: string[]): string => {
@@ -368,6 +372,18 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
                 <FolderIcon size={16} />
                 Folders
               </button>
+              <button
+                onClick={() => setActiveTab('hotkeys')}
+                className={clsx(
+                  'flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                  activeTab === 'hotkeys'
+                    ? 'bg-accent text-accent-foreground'
+                    : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
+                )}
+              >
+                <Keyboard size={16} />
+                Hotkeys
+              </button>
             </div>
           </div>
 
@@ -381,6 +397,8 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
                   setDashDate={setDashDate}
                   dashSearch={dashSearch}
                   setDashSearch={setDashSearch}
+                  dashSourceApp={dashSourceApp}
+                  setDashSourceApp={setDashSourceApp}
                   dashClips={dashClips}
                   dashClipsLoading={dashClipsLoading}
                 />
@@ -424,6 +442,8 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
                   loadFolders={loadFolders}
                 />
               )}
+
+              {activeTab === 'hotkeys' && <HotkeysTab currentHotkey={settings.hotkey} />}
             </div>
           </div>
         </div>

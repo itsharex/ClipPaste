@@ -301,13 +301,6 @@ function App() {
         handleTogglePin(selectedClipId);
       }
     },
-    onQuickPaste: (index: number) => {
-      if (editingClip) return;
-      const targetClips = filteredClips;
-      if (index < targetClips.length) {
-        handlePaste(targetClips[index].id);
-      }
-    },
   });
 
   // --- Load more (infinite scroll) ---
@@ -400,9 +393,9 @@ function App() {
 
   // --- Render ---
   return (
-    <div className="relative h-screen w-full overflow-hidden" onDragEnd={handleNativeDragEnd}>
+    <div className="relative h-screen w-full overflow-hidden" onDragOver={(e) => { if (draggingClipId) e.preventDefault(); }} onDragEnd={handleNativeDragEnd}>
       <div
-        className="absolute inset-0"
+        className="pointer-events-none absolute inset-0"
         style={{
           backgroundColor: 'transparent',
           backdropFilter: 'blur(2px)',

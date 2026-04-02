@@ -540,35 +540,30 @@ pub async fn get_dashboard_stats(db: tauri::State<'_, Arc<Database>>) -> Result<
 }
 
 #[tauri::command]
-pub async fn get_clips_by_date(date: String, search: Option<String>, db: tauri::State<'_, Arc<Database>>) -> Result<Vec<ClipboardItem>, String> {
+pub async fn get_clips_by_date(date: String, search: Option<String>, source_app: Option<String>, db: tauri::State<'_, Arc<Database>>) -> Result<Vec<ClipboardItem>, String> {
     let pool = &db.pool;
 
-    let clips: Vec<Clip> = if let Some(ref q) = search {
-        let like = format!("%{}%", q);
-        sqlx::query_as(
-            "SELECT id, uuid, clip_type,
-                    CASE WHEN clip_type = 'image' THEN content ELSE '' END as content,
-                    text_preview, content_hash,
-                    folder_id, is_deleted, source_app, source_icon, metadata,
-                    created_at, last_accessed, last_pasted_at, is_pinned,
-                    subtype, note, paste_count
-             FROM clips WHERE date(created_at, 'localtime') = ? AND text_preview LIKE ?
-             ORDER BY created_at DESC LIMIT 100"
-        ).bind(&date).bind(&like)
-        .fetch_all(pool).await.map_err(|e| e.to_string())?
-    } else {
-        sqlx::query_as(
-            "SELECT id, uuid, clip_type,
-                    CASE WHEN clip_type = 'image' THEN content ELSE '' END as content,
-                    text_preview, content_hash,
-                    folder_id, is_deleted, source_app, source_icon, metadata,
-                    created_at, last_accessed, last_pasted_at, is_pinned,
-                    subtype, note, paste_count
-             FROM clips WHERE date(created_at, 'localtime') = ?
-             ORDER BY created_at DESC LIMIT 100"
-        ).bind(&date)
-        .fetch_all(pool).await.map_err(|e| e.to_string())?
-    };
+    let has_search = search.as_ref().map_or(false, |s| !s.is_empty());
+    let has_app = source_app.as_ref().map_or(false, |s| !s.is_empty());
+
+    let mut sql = String::from(
+        "SELECT id, uuid, clip_type,
+                CASE WHEN clip_type = 'image' THEN content ELSE '' END as content,
+                text_preview, content_hash,
+                folder_id, is_deleted, source_app, source_icon, metadata,
+                created_at, last_accessed, last_pasted_at, is_pinned,
+                subtype, note, paste_count
+         FROM clips WHERE date(created_at, 'localtime') = ?"
+    );
+    if has_search { sql.push_str(" AND text_preview LIKE ?"); }
+    if has_app { sql.push_str(" AND source_app = ?"); }
+    sql.push_str(" ORDER BY created_at DESC LIMIT 100");
+
+    let mut query = sqlx::query_as::<_, Clip>(&sql).bind(&date);
+    if has_search { query = query.bind(format!("%{}%", search.as_ref().unwrap())); }
+    if has_app { query = query.bind(source_app.as_ref().unwrap()); }
+
+    let clips: Vec<Clip> = query.fetch_all(pool).await.map_err(|e| e.to_string())?;
 
     let mut items = Vec::with_capacity(clips.len());
     for clip in &clips {

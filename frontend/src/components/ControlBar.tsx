@@ -365,10 +365,14 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
               }}
               onMouseEnter={() => handleMouseEnter(cat.id)}
               onMouseLeave={handleMouseLeave}
-              onDragOver={(e) => {
+              onDragEnter={(e) => {
                 e.preventDefault();
                 e.dataTransfer.dropEffect = 'move';
                 onDragHover(cat.id);
+              }}
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
               }}
               onDragLeave={() => onDragLeave()}
               onDrop={(e) => {

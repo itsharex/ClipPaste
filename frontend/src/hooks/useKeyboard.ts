@@ -9,7 +9,6 @@ interface KeyboardOptions {
   onPaste?: () => void;
   onEdit?: () => void;
   onPin?: () => void;
-  onQuickPaste?: (index: number) => void;
 }
 
 export function useKeyboard(options: KeyboardOptions) {
@@ -66,14 +65,6 @@ export function useKeyboard(options: KeyboardOptions) {
         opts.onPin();
       }
 
-      // Ctrl+1..9 quick-paste (not in input fields)
-      if ((e.ctrlKey || e.metaKey) && !isTyping && opts.onQuickPaste) {
-        const num = parseInt(e.key, 10);
-        if (num >= 1 && num <= 9) {
-          e.preventDefault();
-          opts.onQuickPaste(num - 1);
-        }
-      }
     };
 
     document.addEventListener('keydown', handleKeyDown);

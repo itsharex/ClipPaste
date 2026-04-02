@@ -12,7 +12,7 @@ pub async fn get_settings(app: AppHandle, db: tauri::State<'_, Arc<Database>>) -
 
     let mut settings = serde_json::json!({
         "max_items": 0,
-        "auto_delete_days": 30,
+        "auto_delete_days": 0,
         "startup_with_windows": false, // Default, will override below
         "show_in_taskbar": false,
         "hotkey": "Ctrl+Shift+V",
@@ -64,14 +64,16 @@ pub async fn save_settings(app: AppHandle, settings: serde_json::Value, db: taur
     let pool = &db.pool;
 
     if let Some(max_items) = settings.get("max_items").and_then(|v| v.as_i64()) {
-        let max_items = max_items.clamp(10, 100_000);
+        // 0 = unlimited, otherwise clamp to 10..100_000
+        let max_items = if max_items <= 0 { 0 } else { max_items.clamp(10, 100_000) };
         sqlx::query(r#"INSERT OR REPLACE INTO settings (key, value) VALUES ('max_items', ?)"#)
             .bind(max_items.to_string())
             .execute(pool).await.ok();
     }
 
     if let Some(days) = settings.get("auto_delete_days").and_then(|v| v.as_i64()) {
-        let days = days.clamp(1, 3650);
+        // 0 = disabled, otherwise clamp to 1..3650
+        let days = if days <= 0 { 0 } else { days.clamp(1, 3650) };
         sqlx::query(r#"INSERT OR REPLACE INTO settings (key, value) VALUES ('auto_delete_days', ?)"#)
             .bind(days.to_string())
             .execute(pool).await.ok();

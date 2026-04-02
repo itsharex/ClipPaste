@@ -331,6 +331,93 @@ export function GeneralTab({
       </section>
 
       <section className="space-y-4">
+        <h3 className="text-sm font-medium text-muted-foreground">Clip Limits</h3>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium">Max Clips</span>
+            <select
+              value={[0, 500, 1000, 2000, 5000, 10000].includes(settings.max_items) ? settings.max_items : 'custom'}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v === 'custom') updateSetting('max_items', 1000);
+                else updateSetting('max_items', parseInt(v));
+              }}
+              className="rounded-lg border border-border bg-input px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              style={{ colorScheme: 'dark' }}
+            >
+              <option value={0}>Unlimited</option>
+              <option value={500}>500</option>
+              <option value={1000}>1,000</option>
+              <option value={2000}>2,000</option>
+              <option value={5000}>5,000</option>
+              <option value={10000}>10,000</option>
+              <option value="custom">Custom...</option>
+            </select>
+          </div>
+          {![0, 500, 1000, 2000, 5000, 10000].includes(settings.max_items) && (
+            <div className="flex items-center justify-end gap-2">
+              <input
+                type="number"
+                min={10}
+                max={100000}
+                value={settings.max_items}
+                onChange={(e) => {
+                  const v = parseInt(e.target.value);
+                  if (v >= 10) updateSetting('max_items', v);
+                }}
+                className="w-28 rounded-lg border border-border bg-input px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                placeholder="Enter number"
+              />
+              <span className="text-xs text-muted-foreground">clips</span>
+            </div>
+          )}
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium">Auto-delete after</span>
+            <select
+              value={[0, 7, 14, 30, 60, 90, 180, 365].includes(settings.auto_delete_days) ? settings.auto_delete_days : 'custom'}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v === 'custom') updateSetting('auto_delete_days', 30);
+                else updateSetting('auto_delete_days', parseInt(v));
+              }}
+              className="rounded-lg border border-border bg-input px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              style={{ colorScheme: 'dark' }}
+            >
+              <option value={0}>Never</option>
+              <option value={7}>7 days</option>
+              <option value={14}>14 days</option>
+              <option value={30}>30 days</option>
+              <option value={60}>60 days</option>
+              <option value={90}>90 days</option>
+              <option value={180}>6 months</option>
+              <option value={365}>1 year</option>
+              <option value="custom">Custom...</option>
+            </select>
+          </div>
+          {![0, 7, 14, 30, 60, 90, 180, 365].includes(settings.auto_delete_days) && (
+            <div className="flex items-center justify-end gap-2">
+              <input
+                type="number"
+                min={1}
+                max={3650}
+                value={settings.auto_delete_days}
+                onChange={(e) => {
+                  const v = parseInt(e.target.value);
+                  if (v >= 1) updateSetting('auto_delete_days', v);
+                }}
+                className="w-28 rounded-lg border border-border bg-input px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                placeholder="Enter days"
+              />
+              <span className="text-xs text-muted-foreground">days</span>
+            </div>
+          )}
+          <p className="text-xs text-muted-foreground">
+            Only applies to clips not in folders and not pinned.
+          </p>
+        </div>
+      </section>
+
+      <section className="space-y-4">
         <h3 className="text-sm font-medium text-red-500/80">Data Management</h3>
         <div className="grid grid-cols-2 gap-3">
           <button
