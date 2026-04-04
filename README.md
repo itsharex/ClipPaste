@@ -114,7 +114,6 @@
 | Shortcut | Action |
 |:---------|:-------|
 | `Ctrl+Shift+V` | Toggle window *(customizable)* |
-| `Ctrl+1` .. `Ctrl+9` | Quick-paste clip 1–9 |
 | `Ctrl+F` | Focus search bar |
 | `Escape` | Close window / Clear search |
 | `Enter` | Paste selected clip |
