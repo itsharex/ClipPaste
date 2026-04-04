@@ -133,7 +133,6 @@ export function useClipActions(opts: UseClipActionsOpts) {
       const clip = clips.find((c) => c.id === clipId);
       if (clip && clip.clip_type === 'image') {
         try {
-          // clip.content is now a file path — fetch via asset protocol for clipboard write
           const assetUrl = convertFileSrc(clip.content);
           const response = await fetch(assetUrl);
           const blob = await response.blob();
@@ -144,7 +143,6 @@ export function useClipActions(opts: UseClipActionsOpts) {
       }
 
       await invoke('paste_clip', { id: clipId });
-      // Backend now handles hiding and auto-pasting (and database update)
     } catch (error) {
       console.error('Failed to paste clip:', error);
     }
@@ -154,7 +152,6 @@ export function useClipActions(opts: UseClipActionsOpts) {
     try {
       const clip = clipsRef.current.find((c) => c.id === clipId);
       if (clip && clip.clip_type === 'image') {
-        // clip.content is a file path — fetch via asset protocol
         const assetUrl = convertFileSrc(clip.content);
         const response = await fetch(assetUrl);
         const blob = await response.blob();

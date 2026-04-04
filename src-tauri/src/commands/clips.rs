@@ -120,10 +120,13 @@ pub async fn get_clip(id: String, db: tauri::State<'_, Arc<Database>>) -> Result
     match clip {
         Some(clip) => {
             let content_str = if clip.clip_type == "image" {
-                // Return absolute file path — frontend uses convertFileSrc()
+                use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
                 let filename = String::from_utf8_lossy(&clip.content).to_string();
                 let image_path = db.images_dir.join(&filename);
-                image_path.to_string_lossy().to_string()
+                match std::fs::read(&image_path) {
+                    Ok(bytes) => BASE64.encode(&bytes),
+                    Err(_) => String::new(),
+                }
             } else {
                 String::from_utf8_lossy(&clip.content).to_string()
             };

@@ -1,10 +1,28 @@
 import { ClipboardItem } from '../types';
 import { clsx } from 'clsx';
-import { useMemo, memo, useState, useRef, useEffect } from 'react';
-import { convertFileSrc } from '@tauri-apps/api/core';
+import { useMemo, memo, useState, useRef, useEffect, useCallback } from 'react';
+import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 import { LAYOUT, TOTAL_COLUMN_WIDTH, PREVIEW_CHAR_LIMIT } from '../constants';
 import { Copy, Check, Pin, Link, Mail, Palette, FolderOpen, StickyNote, Image as ImageIcon, Folder, ShieldAlert } from 'lucide-react';
 import { formatDistanceToNowStrict } from 'date-fns';
+
+/** Image component that tries asset protocol first, falls back to base64 via get_clip */
+function ImageWithFallback({ src, clipId, alt, className }: { src: string; clipId: string; alt: string; className: string }) {
+  const [imgSrc, setImgSrc] = useState(src);
+  const [failed, setFailed] = useState(false);
+  const handleError = useCallback(() => {
+    if (failed) return;
+    setFailed(true);
+    invoke<{ content: string; clip_type: string }>('get_clip', { id: clipId })
+      .then((clip) => {
+        if (clip.clip_type === 'image' && clip.content) {
+          setImgSrc(`data:image/png;base64,${clip.content}`);
+        }
+      })
+      .catch(() => {});
+  }, [clipId, failed]);
+  return <img src={imgSrc} alt={alt} className={className} onError={handleError} />;
+}
 
 interface ClipCardProps {
   clip: ClipboardItem;
@@ -114,13 +132,13 @@ export const ClipCard = memo(function ClipCard({
   // Memoize the content rendering — now subtype-aware
   const renderedContent = useMemo(() => {
     if (clip.clip_type === 'image') {
-      // clip.content is now an absolute file path — use convertFileSrc for asset protocol
       const imageSrc = clip.content ? convertFileSrc(clip.content) : '';
       return (
         <div className="flex h-full w-full select-none items-center justify-center rounded-md bg-black/20 p-1">
           {clip.content ? (
-            <img
+            <ImageWithFallback
               src={imageSrc}
+              clipId={clip.id}
               alt="Clipboard Image"
               className="max-h-full max-w-full rounded object-contain shadow-md"
             />
@@ -251,7 +269,6 @@ export const ClipCard = memo(function ClipCard({
   const handleNativeDragStart = (e: React.DragEvent) => {
     // Set data for external drop targets (other apps)
     if (clip.clip_type === 'image') {
-      // clip.content is a file path — set as URI for native drag
       e.dataTransfer.setData('text/plain', clip.content);
     } else {
       e.dataTransfer.setData('text/plain', clip.content);

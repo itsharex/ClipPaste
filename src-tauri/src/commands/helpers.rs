@@ -4,14 +4,12 @@ use crate::models::{Clip, ClipboardItem};
 use std::path::Path;
 
 /// Convert a Clip DB row to a ClipboardItem for the frontend.
-/// For images: returns the absolute file path (frontend uses convertFileSrc() / asset protocol).
+/// For images: returns the absolute file path (frontend uses convertFileSrc()).
 /// For text: returns the text_preview.
-/// When `preview_only` is true, image content is omitted (empty string).
 pub async fn clip_to_item_async(clip: &Clip, images_dir: &Path, preview_only: bool) -> ClipboardItem {
     let content_str = if preview_only && clip.clip_type == "image" {
         String::new()
     } else if clip.clip_type == "image" {
-        // Return absolute file path — frontend uses convertFileSrc() to get asset:// URL
         let filename = String::from_utf8_lossy(&clip.content).to_string();
         let image_path = images_dir.join(&filename);
         image_path.to_string_lossy().to_string()
