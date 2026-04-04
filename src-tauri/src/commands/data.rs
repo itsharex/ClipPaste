@@ -57,22 +57,6 @@ pub async fn set_data_directory(
         }
     }
 
-    // Get current DB path (read from config or use default)
-    let config_path = utils::get_config_path();
-    let current_data_dir = if let Ok(config_content) = std::fs::read_to_string(&config_path) {
-        if let Ok(config) = serde_json::from_str::<serde_json::Value>(&config_content) {
-            if let Some(custom_path) = config.get("data_directory").and_then(|v| v.as_str()) {
-                PathBuf::from(custom_path)
-            } else {
-                utils::get_default_data_dir()
-            }
-        } else {
-            utils::get_default_data_dir()
-        }
-    } else {
-        utils::get_default_data_dir()
-    };
-
     // Ensure new directory exists — a fresh DB will be created on next restart
     std::fs::create_dir_all(&new_path_buf).map_err(|e| format!("Cannot create directory: {}", e))?;
 
@@ -403,6 +387,10 @@ pub async fn import_data(app: AppHandle, db: tauri::State<'_, Arc<Database>>) ->
     let data_dir = db.images_dir.parent().unwrap().to_path_buf();
     let data_dir_clone = data_dir.clone();
 
+    // Close the DB pool before replacing the file — otherwise SQLite WAL/SHM
+    // from the old connection will overwrite the imported DB on next open
+    db.pool.close().await;
+
     // Extract to a temp directory first to avoid overwriting the live DB
     let temp_dir = data_dir.join(".import_temp");
     let temp_dir_clone = temp_dir.clone();
@@ -474,6 +462,10 @@ pub async fn import_data(app: AppHandle, db: tauri::State<'_, Arc<Database>>) ->
         if dst_db.exists() {
             let _ = std::fs::copy(&dst_db, &backup_db);
         }
+
+        // Remove stale WAL/SHM from old DB before replacing
+        let _ = std::fs::remove_file(dst_db.with_extension("db-wal"));
+        let _ = std::fs::remove_file(dst_db.with_extension("db-shm"));
 
         // Copy new DB over the current one
         std::fs::copy(&src_db, &dst_db)
