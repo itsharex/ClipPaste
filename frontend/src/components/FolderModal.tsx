@@ -140,7 +140,7 @@ export function FolderModal({ isOpen, mode, initialName, initialColor, initialIc
   };
 
   return createPortal(
-    <div className="fixed inset-0 z-[9999] overflow-y-auto bg-black/60 p-4">
+    <div className="fixed inset-0 z-[9999] overflow-y-auto bg-black/50 p-4">
       <div className="mx-auto w-80 rounded-xl border border-border bg-card p-4 shadow-2xl">
         <h3 className="mb-2 text-sm font-semibold text-foreground">
           {mode === 'create' ? 'Create New Folder' : 'Rename Folder'}
@@ -223,14 +223,14 @@ export function FolderModal({ isOpen, mode, initialName, initialColor, initialIc
           <button
             onClick={onClose}
             disabled={isSubmitting}
-            className="rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-50"
+            className="rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground hover:bg-secondary hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
           >
             Cancel
           </button>
           <button
             onClick={handleSubmit}
             disabled={isSubmitting}
-            className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {isSubmitting ? 'Saving...' : mode === 'create' ? 'Create' : 'Save'}
           </button>

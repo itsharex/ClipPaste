@@ -24,21 +24,21 @@ const FOLDER_COLORS_LIGHT = [
 ];
 
 const FOLDER_COLORS_DARK = [
-  { active: 'bg-red-400/30 text-white ring-2 ring-red-500/50 font-bold drop-shadow-sm', inactive: 'bg-red-400/10 text-white/80 hover:bg-red-400/20 hover:text-white drop-shadow-sm' },
-  { active: 'bg-orange-400/30 text-white ring-2 ring-orange-500/50 font-bold drop-shadow-sm', inactive: 'bg-orange-400/10 text-white/80 hover:bg-orange-400/20 hover:text-white drop-shadow-sm' },
-  { active: 'bg-amber-400/30 text-white ring-2 ring-amber-500/50 font-bold drop-shadow-sm', inactive: 'bg-amber-400/10 text-white/80 hover:bg-amber-400/20 hover:text-white drop-shadow-sm' },
-  { active: 'bg-green-400/30 text-white ring-2 ring-green-500/50 font-bold drop-shadow-sm', inactive: 'bg-green-400/10 text-white/80 hover:bg-green-400/20 hover:text-white drop-shadow-sm' },
-  { active: 'bg-emerald-400/30 text-white ring-2 ring-emerald-500/50 font-bold drop-shadow-sm', inactive: 'bg-emerald-400/10 text-white/80 hover:bg-emerald-400/20 hover:text-white drop-shadow-sm' },
-  { active: 'bg-teal-400/30 text-white ring-2 ring-teal-500/50 font-bold drop-shadow-sm', inactive: 'bg-teal-400/10 text-white/80 hover:bg-teal-400/20 hover:text-white drop-shadow-sm' },
-  { active: 'bg-cyan-400/30 text-white ring-2 ring-cyan-500/50 font-bold drop-shadow-sm', inactive: 'bg-cyan-400/10 text-white/80 hover:bg-cyan-400/20 hover:text-white drop-shadow-sm' },
-  { active: 'bg-sky-400/30 text-white ring-2 ring-sky-500/50 font-bold drop-shadow-sm', inactive: 'bg-sky-400/10 text-white/80 hover:bg-sky-400/20 hover:text-white drop-shadow-sm' },
-  { active: 'bg-blue-400/30 text-white ring-2 ring-blue-500/50 font-bold drop-shadow-sm', inactive: 'bg-blue-400/10 text-white/80 hover:bg-blue-400/20 hover:text-white drop-shadow-sm' },
-  { active: 'bg-indigo-400/30 text-white ring-2 ring-indigo-500/50 font-bold drop-shadow-sm', inactive: 'bg-indigo-400/10 text-white/80 hover:bg-indigo-400/20 hover:text-white drop-shadow-sm' },
-  { active: 'bg-violet-400/30 text-white ring-2 ring-violet-500/50 font-bold drop-shadow-sm', inactive: 'bg-violet-400/10 text-white/80 hover:bg-violet-400/20 hover:text-white drop-shadow-sm' },
-  { active: 'bg-purple-400/30 text-white ring-2 ring-purple-500/50 font-bold drop-shadow-sm', inactive: 'bg-purple-400/10 text-white/80 hover:bg-purple-400/20 hover:text-white drop-shadow-sm' },
-  { active: 'bg-fuchsia-400/30 text-white ring-2 ring-fuchsia-500/50 font-bold drop-shadow-sm', inactive: 'bg-fuchsia-400/10 text-white/80 hover:bg-fuchsia-400/20 hover:text-white drop-shadow-sm' },
-  { active: 'bg-pink-400/30 text-white ring-2 ring-pink-500/50 font-bold drop-shadow-sm', inactive: 'bg-pink-400/10 text-white/80 hover:bg-pink-400/20 hover:text-white drop-shadow-sm' },
-  { active: 'bg-rose-400/30 text-white ring-2 ring-rose-500/50 font-bold drop-shadow-sm', inactive: 'bg-rose-400/10 text-white/80 hover:bg-rose-400/20 hover:text-white drop-shadow-sm' },
+  { active: 'bg-red-400/30 text-white ring-2 ring-red-500/50 font-bold drop-shadow-sm', inactive: 'bg-red-400/20 text-white/90 hover:bg-red-400/30 hover:text-white drop-shadow-sm' },
+  { active: 'bg-orange-400/30 text-white ring-2 ring-orange-500/50 font-bold drop-shadow-sm', inactive: 'bg-orange-400/20 text-white/90 hover:bg-orange-400/30 hover:text-white drop-shadow-sm' },
+  { active: 'bg-amber-400/30 text-white ring-2 ring-amber-500/50 font-bold drop-shadow-sm', inactive: 'bg-amber-400/20 text-white/90 hover:bg-amber-400/30 hover:text-white drop-shadow-sm' },
+  { active: 'bg-green-400/30 text-white ring-2 ring-green-500/50 font-bold drop-shadow-sm', inactive: 'bg-green-400/20 text-white/90 hover:bg-green-400/30 hover:text-white drop-shadow-sm' },
+  { active: 'bg-emerald-400/30 text-white ring-2 ring-emerald-500/50 font-bold drop-shadow-sm', inactive: 'bg-emerald-400/20 text-white/90 hover:bg-emerald-400/30 hover:text-white drop-shadow-sm' },
+  { active: 'bg-teal-400/30 text-white ring-2 ring-teal-500/50 font-bold drop-shadow-sm', inactive: 'bg-teal-400/20 text-white/90 hover:bg-teal-400/30 hover:text-white drop-shadow-sm' },
+  { active: 'bg-cyan-400/30 text-white ring-2 ring-cyan-500/50 font-bold drop-shadow-sm', inactive: 'bg-cyan-400/20 text-white/90 hover:bg-cyan-400/30 hover:text-white drop-shadow-sm' },
+  { active: 'bg-sky-400/30 text-white ring-2 ring-sky-500/50 font-bold drop-shadow-sm', inactive: 'bg-sky-400/20 text-white/90 hover:bg-sky-400/30 hover:text-white drop-shadow-sm' },
+  { active: 'bg-blue-400/30 text-white ring-2 ring-blue-500/50 font-bold drop-shadow-sm', inactive: 'bg-blue-400/20 text-white/90 hover:bg-blue-400/30 hover:text-white drop-shadow-sm' },
+  { active: 'bg-indigo-400/30 text-white ring-2 ring-indigo-500/50 font-bold drop-shadow-sm', inactive: 'bg-indigo-400/20 text-white/90 hover:bg-indigo-400/30 hover:text-white drop-shadow-sm' },
+  { active: 'bg-violet-400/30 text-white ring-2 ring-violet-500/50 font-bold drop-shadow-sm', inactive: 'bg-violet-400/20 text-white/90 hover:bg-violet-400/30 hover:text-white drop-shadow-sm' },
+  { active: 'bg-purple-400/30 text-white ring-2 ring-purple-500/50 font-bold drop-shadow-sm', inactive: 'bg-purple-400/20 text-white/90 hover:bg-purple-400/30 hover:text-white drop-shadow-sm' },
+  { active: 'bg-fuchsia-400/30 text-white ring-2 ring-fuchsia-500/50 font-bold drop-shadow-sm', inactive: 'bg-fuchsia-400/20 text-white/90 hover:bg-fuchsia-400/30 hover:text-white drop-shadow-sm' },
+  { active: 'bg-pink-400/30 text-white ring-2 ring-pink-500/50 font-bold drop-shadow-sm', inactive: 'bg-pink-400/20 text-white/90 hover:bg-pink-400/30 hover:text-white drop-shadow-sm' },
+  { active: 'bg-rose-400/30 text-white ring-2 ring-rose-500/50 font-bold drop-shadow-sm', inactive: 'bg-rose-400/20 text-white/90 hover:bg-rose-400/30 hover:text-white drop-shadow-sm' },
 ];
 
 const COLOR_KEY_TO_INDEX: Record<string, number> = {
@@ -311,17 +311,19 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
 
       {/* Content Type Filter */}
       {showSearch && (
-        <div className="no-drag flex items-center gap-0.5" style={{ WebkitAppRegion: 'no-drag' } as any}>
+        <div className="no-drag flex items-center gap-0.5" role="toolbar" aria-label="Filter by content type" style={{ WebkitAppRegion: 'no-drag' } as any}>
           {CONTENT_TYPE_FILTERS.map(({ key, label, Icon }) => (
             <button
               key={key}
               onClick={() => onContentTypeFilterChange?.(contentTypeFilter === key ? null : key)}
               title={label}
+              aria-label={`Filter by ${label}`}
+              aria-pressed={contentTypeFilter === key}
               className={clsx(
                 'rounded-md p-1.5 transition-all duration-150',
                 contentTypeFilter === key
                   ? 'bg-primary/20 text-primary'
-                  : 'text-muted-foreground/50 hover:bg-accent hover:text-foreground'
+                  : 'text-muted-foreground hover:bg-accent hover:text-foreground'
               )}
             >
               <Icon size={14} />
@@ -502,18 +504,22 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
                 : 'text-muted-foreground/40 hover:bg-accent hover:text-foreground'
             )}
             title={isIncognito ? 'Incognito ON — clipboard not recorded' : 'Enable incognito mode'}
+            aria-label={isIncognito ? 'Disable incognito mode' : 'Enable incognito mode'}
+            aria-pressed={isIncognito}
           >
             <EyeOff size={18} />
           </button>
         )}
         <button
           onClick={onAddClick}
+          aria-label="Create new folder"
           className="rounded-lg p-2 text-emerald-400 transition-colors hover:bg-emerald-500/10"
         >
           <Plus size={20} />
         </button>
         <button
           onClick={onMoreClick}
+          aria-label="Open settings"
           className="rounded-lg p-2 text-amber-400 transition-colors hover:bg-amber-500/10"
         >
           <MoreHorizontal size={20} />

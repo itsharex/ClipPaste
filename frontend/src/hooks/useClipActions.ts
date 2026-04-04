@@ -135,16 +135,20 @@ export function useClipActions(opts: UseClipActionsOpts) {
         try {
           const assetUrl = convertFileSrc(clip.content);
           const response = await fetch(assetUrl);
+          if (!response.ok) throw new Error(`Fetch failed: ${response.status}`);
           const blob = await response.blob();
           await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
         } catch (e) {
-          console.error('Frontend clipboard write failed', e);
+          console.error('Frontend clipboard write failed, skipping paste', e);
+          toast.error('Failed to load image for paste');
+          return;
         }
       }
 
       await invoke('paste_clip', { id: clipId });
     } catch (error) {
       console.error('Failed to paste clip:', error);
+      toast.error('Failed to paste clip');
     }
   };
 

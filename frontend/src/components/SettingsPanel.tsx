@@ -79,6 +79,7 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
 
   // Generic handler for immediate settings updates
   const updateSettings = async (updates: Partial<Settings>) => {
+    const prevSettings = settings;
     const newSettings = { ...settings, ...updates };
     setSettings(newSettings);
 
@@ -91,6 +92,7 @@ export function SettingsPanel({ settings: initialSettings, onClose }: SettingsPa
       }
     } catch (error) {
       console.error(`Failed to save settings:`, error);
+      setSettings(prevSettings); // Rollback on failure
       toast.error(`Failed to save settings`);
       return; // Don't show success toast
     }

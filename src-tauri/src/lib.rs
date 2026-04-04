@@ -148,7 +148,7 @@ pub fn run_app() {
                     let label = window.label().to_string();
                     let app_handle = window.app_handle().clone();
                     let db = window.state::<Arc<Database>>().inner().clone();
-                    let theme_ = theme.clone();
+                    let theme_ = *theme;
 
                     tauri::async_runtime::spawn(async move {
                         let current_theme = db.get_setting("theme").await.ok().flatten().unwrap_or_else(|| "system".to_string());
@@ -350,7 +350,7 @@ pub fn run_app() {
             #[cfg(target_os = "macos")]
             let _ = apply_vibrancy(&win, NSVisualEffectMaterial::WindowBackground, None, None);
 
-            let _ = app_handle.plugin(tauri_plugin_global_shortcut::Builder::new().build())?;
+            app_handle.plugin(tauri_plugin_global_shortcut::Builder::new().build())?;
 
             // Load saved hotkey from database or use default
             let db_for_hotkey = db_for_clipboard.clone();
@@ -817,7 +817,7 @@ pub fn apply_window_effect(window: &tauri::WebviewWindow, effect: &str, theme: &
                 let _ = switch_effect(window, Effect::Blur, dark, None);
                 log::info!("THEME:Applied Blur effect (Theme: {})", theme);
             },
-            "mica_alt" | _ => {
+            _ => {
                 let _ = switch_effect(window, Effect::Tabbed, dark, None);
                 log::info!("THEME:Applied Tabbed/Mica Alt effect (Theme: {})", theme);
             }

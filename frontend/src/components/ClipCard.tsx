@@ -352,7 +352,7 @@ export const ClipCard = memo(function ClipCard({
               }}
               className={clsx(
                 'rounded-md p-1 transition-opacity duration-150 hover:bg-black/10',
-                clip.is_pinned ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                clip.is_pinned ? 'opacity-100' : 'opacity-40 group-hover:opacity-100'
               )}
               title={clip.is_pinned ? 'Unpin' : 'Pin'}
             >

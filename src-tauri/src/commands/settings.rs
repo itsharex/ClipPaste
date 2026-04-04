@@ -160,10 +160,8 @@ pub async fn save_settings(app: AppHandle, settings: serde_json::Value, db: taur
                  if let Err(e) = app.autolaunch().enable() {
                      log::warn!("Failed to enable autostart: {}", e);
                  }
-             } else {
-                 if let Err(e) = app.autolaunch().disable() {
-                     log::warn!("Failed to disable autostart: {}", e);
-                 }
+             } else if let Err(e) = app.autolaunch().disable() {
+                 log::warn!("Failed to disable autostart: {}", e);
              }
         }
     }

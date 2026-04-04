@@ -22,6 +22,9 @@ import { useBatchActions } from './hooks/useBatchActions';
 import { Toaster, toast } from 'sonner';
 import { LAYOUT } from './constants';
 
+const RE_URL = /^https?:\/\/\S+$/i;
+const RE_FILE_PATH = /^[a-zA-Z]:\\/;
+
 function App() {
   const [clips, setClips] = useState<AppClipboardItem[]>([]);
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
@@ -381,21 +384,21 @@ function App() {
     openCreateModal, openRenameModal, closeModal: closeFolderModal,
   } = useFolderModal();
 
-  // Smart content type matching
+  // Smart content type matching — regex patterns defined once outside render cycle
   const matchesContentType = useCallback((clip: AppClipboardItem, filter: ClipType): boolean => {
     if (filter === 'image') return clip.clip_type === 'image';
     if (filter === 'url') {
-      return clip.clip_type === 'text' && /^https?:\/\/\S+$/i.test(clip.content.trim());
+      return clip.clip_type === 'text' && RE_URL.test(clip.content.trim());
     }
     if (filter === 'file') {
-      return clip.clip_type === 'text' && /^[a-zA-Z]:\\/.test(clip.content.trim());
+      return clip.clip_type === 'text' && RE_FILE_PATH.test(clip.content.trim());
     }
     if (filter === 'html') return clip.clip_type === 'html';
     if (filter === 'rtf') return clip.clip_type === 'rtf';
     if (filter === 'text') {
       return clip.clip_type === 'text'
-        && !/^https?:\/\/\S+$/i.test(clip.content.trim())
-        && !/^[a-zA-Z]:\\/.test(clip.content.trim());
+        && !RE_URL.test(clip.content.trim())
+        && !RE_FILE_PATH.test(clip.content.trim());
     }
     return clip.clip_type === filter;
   }, []);
@@ -501,26 +504,29 @@ function App() {
           {contextMenu && (() => {
             const ctxClip = contextMenu.type === 'card' ? clips.find((c) => c.id === contextMenu.itemId) : null;
             const ctxFolder = contextMenu.type === 'folder' ? folders.find((f) => f.id === contextMenu.itemId) : null;
+            // Guard: if clip/folder was deleted between context menu open and render, close menu
+            if (contextMenu.type === 'card' && !ctxClip) return null;
+            if (contextMenu.type === 'folder' && !ctxFolder) return null;
             return (
               <ContextMenu
                 x={contextMenu.x}
                 y={contextMenu.y}
                 onClose={handleCloseContextMenu}
                 options={
-                  contextMenu.type === 'card'
+                  contextMenu.type === 'card' && ctxClip
                     ? [
                         ...(selectedFolder ? [{
-                          label: ctxClip?.is_pinned ? 'Unpin' : 'Pin',
+                          label: ctxClip.is_pinned ? 'Unpin' : 'Pin',
                           onClick: () => handleTogglePin(contextMenu.itemId),
                         }] : []),
-                        ...(ctxClip?.clip_type !== 'image'
+                        ...(ctxClip.clip_type !== 'image'
                           ? [
                               { label: 'Paste as plain text', onClick: () => handlePastePlainText(contextMenu.itemId) },
                               { label: 'Edit before paste', onClick: () => handleEditBeforePaste(contextMenu.itemId) },
                             ]
                           : []),
                         {
-                          label: ctxClip?.note ? 'Edit note' : 'Add note',
+                          label: ctxClip.note ? 'Edit note' : 'Add note',
                           onClick: () => handleEditNote(contextMenu.itemId),
                         },
                         {
@@ -634,7 +640,7 @@ function App() {
 
           {/* Batch action bar — floating overlay */}
           {isMultiSelect && (
-            <div className="pointer-events-none absolute bottom-6 left-0 right-0 z-40 flex justify-center">
+            <div className="animate-in fade-in slide-in-from-bottom-4 pointer-events-none absolute bottom-6 left-0 right-0 z-40 flex justify-center duration-200">
               <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-border/50 bg-background/95 px-4 py-2 shadow-xl backdrop-blur-md">
                 <span className="text-xs font-semibold text-primary">{selectedClipIds.size} selected</span>
                 <div className="h-3.5 w-px bg-border/50" />

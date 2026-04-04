@@ -11,6 +11,14 @@ interface NoteModalProps {
 export function NoteModal({ isOpen, clipId, initialNote, onSave, onClose }: NoteModalProps) {
   const [text, setText] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+  const textRef = useRef(text);
+  textRef.current = text;
+  const onSaveRef = useRef(onSave);
+  onSaveRef.current = onSave;
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  const clipIdRef = useRef(clipId);
+  clipIdRef.current = clipId;
 
   useEffect(() => {
     if (isOpen) {
@@ -25,13 +33,17 @@ export function NoteModal({ isOpen, clipId, initialNote, onSave, onClose }: Note
   useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { e.preventDefault(); onClose(); }
-      if (e.key === 'Enter') { e.preventDefault(); handleSave(); }
+      if (e.key === 'Escape') { e.preventDefault(); onCloseRef.current(); }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (clipIdRef.current) {
+          onSaveRef.current(clipIdRef.current, textRef.current.trim() || null);
+        }
+      }
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, text]);
+  }, [isOpen]);
 
   const handleSave = () => {
     if (!clipId) return;
@@ -43,7 +55,7 @@ export function NoteModal({ isOpen, clipId, initialNote, onSave, onClose }: Note
   return (
     <div
       className="absolute inset-0 z-50 flex items-center justify-center"
-      style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
+      style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} /* bg-black/50 */
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div className="flex w-[80%] flex-col gap-2 rounded-lg border border-border bg-popover p-3 shadow-xl">

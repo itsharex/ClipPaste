@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.3] - 2026-04-04
+
+### Fixed
+- **Incognito race condition** — check moved after acquiring clipboard lock to prevent bypass during debounce
+- **Keyboard shortcuts in search** — Arrow Up/Down and Enter now work while typing in search input; E, P, Ctrl+Delete blocked while typing
+- **Stale closures in modals** — EditClipModal and NoteModal use refs to prevent capturing old handler references
+- **Settings rollback on failure** — UI reverts to previous settings if backend save fails
+- **Context menu crash** — null guard prevents crash when clip/folder is deleted between menu open and render
+- **Image paste error handling** — shows toast error and aborts if image fetch fails instead of silently continuing
+
+### Changed
+- **window-vibrancy pinned to commit** — reproducible builds (was `branch = "dev"`)
+- **Clipboard debounce configurable** — reads `debounce_ms` from settings cache (default 150ms)
+- **Dark mode folder contrast** — inactive folder buttons more visible (opacity /10 → /20)
+- **Filter buttons visibility** — content type filter icons no longer half-transparent
+- **Modal backdrop consistency** — all modals standardized to bg-black/50
+- **Pin button always visible** — dimmed (40%) when unpinned instead of hidden
+- **Sensitive blur softened** — reduced from 5px to 3px with faster transition
+- **Batch action bar animation** — slide-in from bottom on multi-select
+- **Disabled buttons** — cursor-not-allowed on disabled state
+
+### Removed
+- **14 clippy warnings** — type alias, strip_prefix, is_multiple_of, collapsed else-if, is_some_and, Copy trait, wildcard pattern
+- **Dead code** — removed unused `isSearchPending` prop and skeleton UI from ClipList
+- **ARIA improvements** — added role/aria-label/aria-pressed to filter buttons, incognito toggle, action buttons
+
+---
+
 ## [1.7.0] - 2026-04-04
 
 ### Added

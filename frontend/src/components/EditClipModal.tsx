@@ -12,6 +12,10 @@ export function EditClipModal({ clip, onPaste, onClose }: EditClipModalProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const textRef = useRef(text);
   textRef.current = text;
+  const onPasteRef = useRef(onPaste);
+  onPasteRef.current = onPaste;
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (clip) {
@@ -24,26 +28,27 @@ export function EditClipModal({ clip, onPaste, onClose }: EditClipModalProps) {
   }, [clip]);
 
   useEffect(() => {
+    if (!clip) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
-        onClose();
+        onCloseRef.current();
       }
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
-        onPaste(textRef.current);
+        onPasteRef.current(textRef.current);
       }
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onPaste, onClose]);
+  }, [clip]);
 
   if (!clip) return null;
 
   return (
     <div
       className="absolute inset-0 z-50 flex items-center justify-center"
-      style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
+      style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} /* bg-black/50 */
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div className="flex w-[90%] flex-col gap-2 rounded-lg border border-border bg-popover p-3 shadow-xl">

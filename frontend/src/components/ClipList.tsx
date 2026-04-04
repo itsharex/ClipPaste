@@ -23,7 +23,6 @@ interface ClipListProps {
   onCardContextMenu?: (e: React.MouseEvent, clipId: string) => void;
   isPreviewing?: boolean;
   isSearching?: boolean;
-  isSearchPending?: boolean;
   folderMap?: Record<string, string>;
   selectedFolder?: string | null;
   searchQuery?: string;
@@ -46,7 +45,6 @@ export function ClipList({
   onCardContextMenu,
   isPreviewing,
   isSearching,
-  isSearchPending,
   folderMap,
   selectedFolder,
   searchQuery,
@@ -151,55 +149,6 @@ export function ClipList({
       containerRef.current.scrollLeft += e.deltaY * multiplier;
     }
   }, []);
-
-  // Skeleton cards only while search is pending (not yet resolved)
-  if (isSearchPending) {
-    const skeletonGradients = [
-      'from-violet-500/40 to-purple-400/40',
-      'from-cyan-500/40 to-sky-400/40',
-      'from-emerald-500/40 to-teal-400/40',
-      'from-orange-500/40 to-amber-400/40',
-      'from-pink-500/40 to-rose-400/40',
-      'from-blue-500/40 to-indigo-400/40',
-      'from-green-500/40 to-emerald-400/40',
-      'from-fuchsia-500/40 to-pink-400/40',
-    ];
-    const skeletonCount = Math.min(
-      Math.ceil(window.innerWidth / TOTAL_COLUMN_WIDTH) + 1,
-      skeletonGradients.length
-    );
-    return (
-      <div className="no-scrollbar flex h-full w-full flex-1 items-center gap-4 overflow-x-auto overflow-y-hidden px-4">
-        {Array.from({ length: skeletonCount }).map((_, i) => (
-          <div
-            key={i}
-            className="animate-skeleton-in flex-shrink-0"
-            style={{
-              width: TOTAL_COLUMN_WIDTH - LAYOUT.CARD_GAP,
-              height: LAYOUT.WINDOW_HEIGHT - LAYOUT.CONTROL_BAR_HEIGHT - LAYOUT.CARD_VERTICAL_PADDING * 2,
-              animationDelay: `${i * 40}ms`,
-            }}
-          >
-            <div className="relative flex h-full w-full flex-col overflow-hidden rounded-xl border border-border/30 bg-card/60 shadow-lg">
-              <div className={`flex items-center gap-2 px-3 py-2 bg-gradient-to-r ${skeletonGradients[i]}`}>
-                <div className="h-4 w-4 rounded-full bg-white/20" />
-                <div className="h-3 w-20 rounded-full bg-white/20" />
-              </div>
-              <div className="flex-1 space-y-3 p-3">
-                <div className="skeleton-shimmer h-3 w-[85%] rounded-full bg-muted/15" />
-                <div className="skeleton-shimmer h-3 w-[60%] rounded-full bg-muted/15" style={{ animationDelay: '0.1s' }} />
-                <div className="skeleton-shimmer h-3 w-[72%] rounded-full bg-muted/15" style={{ animationDelay: '0.2s' }} />
-                <div className="skeleton-shimmer h-3 w-[45%] rounded-full bg-muted/15" style={{ animationDelay: '0.3s' }} />
-              </div>
-              <div className="px-3 py-2">
-                <div className="h-2.5 w-16 rounded-full bg-muted/10" />
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    );
-  }
 
   if (isLoading && clips.length === 0) {
     return (

@@ -325,8 +325,10 @@ pub async fn search_clips(query: String, filter_id: Option<String>, limit: i64, 
     matched.sort_by_key(|(_, fid, tier)| {
         let folder_rank = if let Some(target_fid) = folder_filter {
             if *fid == Some(target_fid) { 0u8 } else if fid.is_some() { 1 } else { 2 }
+        } else if fid.is_some() {
+            0
         } else {
-            if fid.is_some() { 0 } else { 1 }
+            1
         };
         // Primary: match tier (0=best), Secondary: folder rank
         (*tier, folder_rank)
@@ -360,12 +362,11 @@ pub async fn search_clips(query: String, filter_id: Option<String>, limit: i64, 
         let a_preview = a.text_preview.to_lowercase();
         let b_preview = b.text_preview.to_lowercase();
 
-        // 1. Relevance tier: exact phrase > starts_with > all words > rest
+        // 1. Relevance tier: exact phrase / starts_with > all words > rest
         let relevance_tier = |preview: &str| -> u8 {
-            if preview.contains(&query_lower) { 0 }              // exact phrase
-            else if preview.starts_with(&query_lower) { 0 }      // starts with full query
-            else if query_words.iter().all(|w| preview.contains(w)) { 1 } // all words present
-            else { 2 }                                            // fuzzy/note only
+            if preview.contains(&query_lower) || preview.starts_with(&query_lower) { 0 }
+            else if query_words.iter().all(|w| preview.contains(w)) { 1 }
+            else { 2 }
         };
         let a_rel = relevance_tier(&a_preview);
         let b_rel = relevance_tier(&b_preview);
@@ -378,8 +379,10 @@ pub async fn search_clips(query: String, filter_id: Option<String>, limit: i64, 
         let folder_rank = |clip: &Clip| -> u8 {
             if let Some(target_fid) = folder_filter {
                 if clip.folder_id == Some(target_fid) { 0 } else if clip.folder_id.is_some() { 1 } else { 2 }
+            } else if clip.folder_id.is_some() {
+                0
             } else {
-                if clip.folder_id.is_some() { 0 } else { 1 }
+                1
             }
         };
 

@@ -580,8 +580,8 @@ pub async fn get_dashboard_stats(db: tauri::State<'_, Arc<Database>>) -> Result<
 pub async fn get_clips_by_date(date: String, search: Option<String>, source_app: Option<String>, db: tauri::State<'_, Arc<Database>>) -> Result<Vec<ClipboardItem>, String> {
     let pool = &db.pool;
 
-    let has_search = search.as_ref().map_or(false, |s| !s.is_empty());
-    let has_app = source_app.as_ref().map_or(false, |s| !s.is_empty());
+    let has_search = search.as_ref().is_some_and(|s| !s.is_empty());
+    let has_app = source_app.as_ref().is_some_and(|s| !s.is_empty());
 
     let mut sql = String::from(
         "SELECT id, uuid, clip_type,

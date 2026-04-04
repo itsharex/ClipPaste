@@ -53,7 +53,8 @@ pub static CLIPBOARD_SYNC: Lazy<Arc<tokio::sync::Mutex<()>>> = Lazy::new(|| Arc:
 
 /// In-memory search index: uuid → (preview_lowercase, folder_id, note_lowercase)
 /// Loaded once at startup, updated on each clipboard change. HashMap for O(1) remove/update.
-pub static SEARCH_CACHE: Lazy<parking_lot::RwLock<std::collections::HashMap<String, (String, Option<i64>, String)>>> =
+type SearchCacheMap = std::collections::HashMap<String, (String, Option<i64>, String)>;
+pub static SEARCH_CACHE: Lazy<parking_lot::RwLock<SearchCacheMap>> =
     Lazy::new(|| parking_lot::RwLock::new(std::collections::HashMap::new()));
 
 /// In-memory settings cache: avoids DB round-trips for hot-path settings like auto_paste, ignore_ghost_clips.
@@ -184,8 +185,7 @@ pub fn detect_subtype(text: &str) -> Option<String> {
     }
 
     // Color: hex (#fff, #ffffff, #ffffffff)
-    if trimmed.starts_with('#') {
-        let hex = &trimmed[1..];
+    if let Some(hex) = trimmed.strip_prefix('#') {
         if (hex.len() == 3 || hex.len() == 6 || hex.len() == 8)
             && hex.chars().all(|c| c.is_ascii_hexdigit())
         {
@@ -258,7 +258,10 @@ pub fn init(app: &AppHandle, db: Arc<Database>) {
         let current_count = DEBOUNCE_COUNTER.fetch_add(1, Ordering::SeqCst) + 1;
 
         tauri::async_runtime::spawn(async move {
-            tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+            let debounce_ms = get_cached_setting("debounce_ms")
+                .and_then(|v| v.parse::<u64>().ok())
+                .unwrap_or(150);
+            tokio::time::sleep(std::time::Duration::from_millis(debounce_ms)).await;
 
             if DEBOUNCE_COUNTER.load(Ordering::SeqCst) != current_count {
                 log::debug!("CLIPBOARD: Debounce: Aborting older event, current_count:{}", current_count);
@@ -329,17 +332,17 @@ fn luhn_check(digits: &str) -> bool {
             return false;
         }
     }
-    sum % 10 == 0
+    sum.is_multiple_of(10)
 }
 
 async fn process_clipboard_change(app: AppHandle, db: Arc<Database>, source_app_info: SourceAppInfo) {
-    // Check incognito mode — skip capture entirely
+    let _guard = CLIPBOARD_SYNC.lock().await;
+
+    // Check incognito mode AFTER acquiring lock to prevent race with toggle during debounce
     if IS_INCOGNITO.load(Ordering::SeqCst) {
         log::debug!("CLIPBOARD: Incognito mode active, skipping capture");
         return;
     }
-
-    let _guard = CLIPBOARD_SYNC.lock().await;
 
     let mut clip_type = "text";
     let mut clip_content = Vec::new();
@@ -598,8 +601,10 @@ fn get_clipboard_owner_app_info() -> (Option<String>, Option<String>, Option<Str
             let desc = get_app_description(&full_path_str);
             let final_name = if let Some(d) = desc {
                 Some(d)
+            } else if !exe_name.is_empty() {
+                Some(exe_name.clone())
             } else {
-                if !exe_name.is_empty() { Some(exe_name.clone()) } else { None }
+                None
             };
 
             let icon = {
