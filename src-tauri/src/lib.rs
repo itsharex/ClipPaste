@@ -398,6 +398,8 @@ pub fn run_app() {
                 db_for_cache.cleanup_orphan_images().await;
                 // Re-scan sensitive detection on all existing clips (picks up new patterns)
                 db_for_cache.rescan_sensitive().await;
+                // Re-scan subtypes on all existing text clips (picks up new subtype patterns)
+                db_for_cache.rescan_subtypes().await;
             });
 
             Ok(())
@@ -449,7 +451,8 @@ pub fn run_app() {
             commands::toggle_incognito,
             commands::get_incognito_status,
             commands::get_initial_state,
-            commands::rescan_sensitive
+            commands::rescan_sensitive,
+            commands::rescan_subtypes
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

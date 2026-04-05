@@ -213,7 +213,58 @@ pub fn detect_subtype(text: &str) -> Option<String> {
         return Some("path".to_string());
     }
 
+    // Phone number: +1-234-567-8900, (234) 567-8900, etc. (single-line, short)
+    if trimmed.len() <= 25 && !trimmed.contains(char::is_alphabetic) {
+        let digits: String = trimmed.chars().filter(|c| c.is_ascii_digit()).collect();
+        if digits.len() >= 7 && digits.len() <= 15
+            && trimmed.chars().all(|c| c.is_ascii_digit() || "+-() .,#".contains(c))
+        {
+            return Some("phone".to_string());
+        }
+    }
+
+    // JSON: starts with { or [ and parses as valid JSON (min length 5 to skip trivial cases)
+    if trimmed.len() >= 5 && (trimmed.starts_with('{') || trimmed.starts_with('[')) {
+        if serde_json::from_str::<serde_json::Value>(trimmed).is_ok() {
+            return Some("json".to_string());
+        }
+    }
+
+    // Code: multi-line text with programming patterns (need ≥2 indicators)
+    if trimmed.lines().count() >= 3 {
+        let has_braces = trimmed.contains('{') && trimmed.contains('}');
+        let has_semicolons = trimmed.matches(';').count() >= 2;
+        let has_fn_keyword = ["function ", "fn ", "def ", "class ", "const ", "let ",
+            "import ", "pub ", "#include", "package ", "var ", "return ", "async "]
+            .iter().any(|kw| trimmed.contains(kw));
+        let has_indentation = trimmed.lines().filter(|l| l.starts_with("    ") || l.starts_with('\t')).count() >= 2;
+        let has_arrows_or_ops = trimmed.contains("=>") || trimmed.contains("->") || trimmed.contains("::");
+        let indicators = [has_braces, has_semicolons, has_fn_keyword, has_indentation, has_arrows_or_ops]
+            .iter().filter(|&&x| x).count();
+        if indicators >= 2 {
+            return Some("code".to_string());
+        }
+    }
+
     None
+}
+
+/// Maximum thumbnail width in pixels. Cards are ~210px wide, so 280px gives good quality at 1.3x.
+const THUMBNAIL_MAX_WIDTH: u32 = 280;
+
+/// Generate a JPEG thumbnail from PNG image bytes, resized to fit within max_width.
+/// Returns the thumbnail bytes or None on failure.
+pub fn generate_thumbnail(png_bytes: &[u8]) -> Option<Vec<u8>> {
+    let img = image::load_from_memory(png_bytes).ok()?;
+    let (w, _h) = (img.width(), img.height());
+    let thumb = if w > THUMBNAIL_MAX_WIDTH {
+        img.thumbnail(THUMBNAIL_MAX_WIDTH, u32::MAX)
+    } else {
+        img
+    };
+    let mut buf = std::io::Cursor::new(Vec::new());
+    thumb.write_to(&mut buf, image::ImageOutputFormat::Jpeg(80)).ok()?;
+    Some(buf.into_inner())
 }
 
 pub fn set_ignore_hash(hash: String) {
@@ -317,7 +368,9 @@ pub fn detect_sensitive(text: &str) -> Option<String> {
 
     // Password-like strings: 8-64 chars, no spaces, mix of 3+ character classes
     // (uppercase, lowercase, digits, special chars) — high entropy random strings
-    if trimmed.len() >= 8 && trimmed.len() <= 64 && !trimmed.contains(char::is_whitespace) {
+    // Skip URLs — they naturally mix char classes (https://Example.com/path123) but are not sensitive
+    if !trimmed.starts_with("http://") && !trimmed.starts_with("https://")
+        && trimmed.len() >= 8 && trimmed.len() <= 64 && !trimmed.contains(char::is_whitespace) {
         let has_upper = trimmed.chars().any(|c| c.is_ascii_uppercase());
         let has_lower = trimmed.chars().any(|c| c.is_ascii_lowercase());
         let has_digit = trimmed.chars().any(|c| c.is_ascii_digit());
@@ -382,6 +435,17 @@ async fn process_clipboard_change(app: AppHandle, db: Arc<Database>, source_app_
                          log::error!("CLIPBOARD: Failed to save image to disk: {}", e);
                          let _ = std::fs::remove_file(read_image_result.path);
                          return;
+                     }
+                 }
+
+                 // Generate and save thumbnail as {hash}_thumb.jpg
+                 let thumb_filename = format!("{}_thumb.jpg", &clip_hash);
+                 let thumb_path = db.image_path(&thumb_filename);
+                 if !thumb_path.exists() {
+                     if let Some(thumb_bytes) = generate_thumbnail(&bytes) {
+                         if let Err(e) = std::fs::write(&thumb_path, &thumb_bytes) {
+                             log::warn!("CLIPBOARD: Failed to save thumbnail: {}", e);
+                         }
                      }
                  }
 

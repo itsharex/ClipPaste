@@ -17,6 +17,21 @@ pub async fn clip_to_item_async(clip: &Clip, images_dir: &Path, preview_only: bo
         clip.text_preview.clone()
     };
 
+    // For images, check if a thumbnail exists ({hash}_thumb.jpg)
+    let thumbnail = if clip.clip_type == "image" {
+        let filename = String::from_utf8_lossy(&clip.content).to_string();
+        let hash = filename.trim_end_matches(".png");
+        let thumb_filename = format!("{}_thumb.jpg", hash);
+        let thumb_path = images_dir.join(&thumb_filename);
+        if thumb_path.exists() {
+            Some(thumb_path.to_string_lossy().to_string())
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
     ClipboardItem {
         id: clip.uuid.clone(),
         clip_type: clip.clip_type.clone(),
@@ -34,6 +49,7 @@ pub async fn clip_to_item_async(clip: &Clip, images_dir: &Path, preview_only: bo
         note: clip.note.clone(),
         paste_count: clip.paste_count,
         is_sensitive: clip.is_sensitive,
+        thumbnail,
     }
 }
 

@@ -146,6 +146,7 @@ pub async fn get_clip(id: String, db: tauri::State<'_, Arc<Database>>) -> Result
                 note: clip.note,
                 paste_count: clip.paste_count,
                 is_sensitive: clip.is_sensitive,
+                thumbnail: None,
             })
         }
         None => Err("Clip not found".to_string()),
@@ -257,10 +258,7 @@ pub async fn delete_clip(id: String, db: tauri::State<'_, Arc<Database>>) -> Res
     if let Some((clip_type, content)) = &clip_info {
         if clip_type == "image" {
             let filename = String::from_utf8_lossy(content).to_string();
-            let image_path = db.images_dir.join(&filename);
-            if image_path.exists() {
-                let _ = std::fs::remove_file(&image_path);
-            }
+            db.remove_image_and_thumb(&filename);
         }
     }
 
@@ -484,11 +482,10 @@ pub async fn bulk_delete_clips(ids: Vec<String>, db: tauri::State<'_, Arc<Databa
     for id in &ids { dq = dq.bind(id); }
     let result = dq.execute(pool).await.map_err(|e| e.to_string())?;
 
-    // Clean up image files
+    // Clean up image files + thumbnails
     for (_, content) in &image_clips {
         let filename = String::from_utf8_lossy(content).to_string();
-        let image_path = db.images_dir.join(&filename);
-        if image_path.exists() { let _ = std::fs::remove_file(&image_path); }
+        db.remove_image_and_thumb(&filename);
     }
 
     // Remove from search cache
@@ -579,5 +576,30 @@ pub async fn rescan_sensitive(db: tauri::State<'_, Arc<Database>>) -> Result<u64
         }
     }
     log::info!("RESCAN: Updated is_sensitive on {} clips out of {}", updated, rows.len());
+    Ok(updated)
+}
+
+/// Re-scan all text clips and update subtype based on current detection rules.
+/// Useful after adding new subtype detections (e.g. code, json, phone).
+#[tauri::command]
+pub async fn rescan_subtypes(db: tauri::State<'_, Arc<Database>>) -> Result<u64, String> {
+    let pool = &db.pool;
+    let rows: Vec<(i64, String)> = sqlx::query_as(
+        "SELECT id, text_preview FROM clips WHERE clip_type = 'text'"
+    ).fetch_all(pool).await.map_err(|e| e.to_string())?;
+
+    let mut updated = 0u64;
+    for (id, preview) in &rows {
+        let subtype = crate::clipboard::detect_subtype(preview);
+        let result = sqlx::query("UPDATE clips SET subtype = ? WHERE id = ? AND COALESCE(subtype, '') != COALESCE(?, '')")
+            .bind(&subtype)
+            .bind(id)
+            .bind(&subtype)
+            .execute(pool).await;
+        if let Ok(r) = result {
+            updated += r.rows_affected();
+        }
+    }
+    log::info!("RESCAN: Updated subtype on {} clips out of {}", updated, rows.len());
     Ok(updated)
 }

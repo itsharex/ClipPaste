@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { FolderItem, ClipType } from '../types';
-import { Search, Plus, MoreHorizontal, X, Layers, FileText, Image, Code, Type, File, Link, EyeOff, Flame } from 'lucide-react';
+import { FolderItem } from '../types';
+import { Search, Plus, MoreHorizontal, X, Layers, FileText, Image, Link, EyeOff, Flame, Mail, Palette, FolderOpen, Phone, Braces, Code2 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { FOLDER_ICON_MAP } from './FolderModal';
 import { type LucideIcon } from 'lucide-react';
@@ -47,13 +47,17 @@ const COLOR_KEY_TO_INDEX: Record<string, number> = {
   fuchsia: 12, pink: 13, rose: 14,
 };
 
-const CONTENT_TYPE_FILTERS: { key: ClipType; label: string; Icon: LucideIcon }[] = [
+/** All clip filters — compact inline row */
+const CLIP_FILTERS: { key: string; label: string; Icon: LucideIcon }[] = [
   { key: 'text', label: 'Text', Icon: FileText },
   { key: 'image', label: 'Image', Icon: Image },
-  { key: 'html', label: 'HTML', Icon: Code },
-  { key: 'rtf', label: 'RTF', Icon: Type },
-  { key: 'file', label: 'File', Icon: File },
   { key: 'url', label: 'URL', Icon: Link },
+  { key: 'email', label: 'Email', Icon: Mail },
+  { key: 'color', label: 'Color', Icon: Palette },
+  { key: 'path', label: 'Path', Icon: FolderOpen },
+  { key: 'phone', label: 'Phone', Icon: Phone },
+  { key: 'json', label: 'JSON', Icon: Braces },
+  { key: 'code', label: 'Code', Icon: Code2 },
 ];
 
 interface ControlBarProps {
@@ -76,8 +80,8 @@ interface ControlBarProps {
   onFolderHover?: (folderId: string | null) => void;
   onFolderHoverEnd?: () => void;
   theme?: 'light' | 'dark';
-  contentTypeFilter?: ClipType | null;
-  onContentTypeFilterChange?: (filter: ClipType | null) => void;
+  clipFilter?: string | null;
+  onClipFilterChange?: (filter: string | null) => void;
   isIncognito?: boolean;
   onToggleIncognito?: () => void;
 }
@@ -103,8 +107,8 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
     onFolderHover,
     onFolderHoverEnd,
     theme = 'dark',
-    contentTypeFilter,
-    onContentTypeFilterChange,
+    clipFilter,
+    onClipFilterChange,
     isIncognito,
     onToggleIncognito,
   },
@@ -309,24 +313,24 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
         )}
       </div>
 
-      {/* Content Type Filter */}
+      {/* Clip Filters — compact inline */}
       {showSearch && (
-        <div className="no-drag flex items-center gap-0.5" role="toolbar" aria-label="Filter by content type" style={{ WebkitAppRegion: 'no-drag' } as any}>
-          {CONTENT_TYPE_FILTERS.map(({ key, label, Icon }) => (
+        <div className="no-drag flex items-center gap-px" role="toolbar" aria-label="Filter clips" style={{ WebkitAppRegion: 'no-drag' } as any}>
+          {CLIP_FILTERS.map(({ key, label, Icon }) => (
             <button
               key={key}
-              onClick={() => onContentTypeFilterChange?.(contentTypeFilter === key ? null : key)}
+              onClick={() => onClipFilterChange?.(clipFilter === key ? null : key)}
               title={label}
               aria-label={`Filter by ${label}`}
-              aria-pressed={contentTypeFilter === key}
+              aria-pressed={clipFilter === key}
               className={clsx(
-                'rounded-md p-1.5 transition-all duration-150',
-                contentTypeFilter === key
+                'rounded p-1 transition-all duration-150',
+                clipFilter === key
                   ? 'bg-primary/20 text-primary'
-                  : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+                  : 'text-muted-foreground/50 hover:bg-accent hover:text-foreground'
               )}
             >
-              <Icon size={14} />
+              <Icon size={12} />
             </button>
           ))}
         </div>

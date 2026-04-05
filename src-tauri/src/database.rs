@@ -229,6 +229,9 @@ impl Database {
         // content column will hold just the filename (e.g. "abc123.png").
         self.migrate_images_to_disk().await;
 
+        // === Generate thumbnails for existing images that lack them ===
+        self.generate_missing_thumbnails().await;
+
         // Rebuild text_preview for existing clips that have short previews (< 500 chars)
         // This upgrades old 200-char previews to 2000-char previews
         let upgraded: u64 = sqlx::query(r#"
@@ -246,6 +249,17 @@ impl Database {
     /// Returns the full path for an image filename
     pub fn image_path(&self, filename: &str) -> PathBuf {
         self.images_dir.join(filename)
+    }
+
+    /// Remove an image file and its thumbnail from disk.
+    /// `filename` is the DB content value, e.g. "abc123.png".
+    pub fn remove_image_and_thumb(&self, filename: &str) {
+        let path = self.images_dir.join(filename);
+        if path.exists() { let _ = std::fs::remove_file(&path); }
+        // Thumbnail: {hash}_thumb.jpg
+        let hash = filename.trim_end_matches(".png");
+        let thumb = self.images_dir.join(format!("{}_thumb.jpg", hash));
+        if thumb.exists() { let _ = std::fs::remove_file(&thumb); }
     }
 
     /// Enforce max_items setting — delete oldest non-folder clips exceeding the limit.
@@ -305,11 +319,10 @@ impl Database {
             return;
         }
 
-        // Clean up image files after successful commit
+        // Clean up image files + thumbnails after successful commit
         for (content,) in &image_clips {
             let filename = String::from_utf8_lossy(content).to_string();
-            let path = self.images_dir.join(&filename);
-            if path.exists() { let _ = std::fs::remove_file(&path); }
+            self.remove_image_and_thumb(&filename);
         }
 
         // Rebuild search cache (trimmed clips must be removed)
@@ -353,8 +366,7 @@ impl Database {
                 log::info!("DB: Auto-deleted {} clips older than {} days", r.rows_affected(), days);
                 for (content,) in &image_clips {
                     let filename = String::from_utf8_lossy(content).to_string();
-                    let path = self.images_dir.join(&filename);
-                    if path.exists() { let _ = std::fs::remove_file(&path); }
+                    self.remove_image_and_thumb(&filename);
                 }
             }
             Ok(_) => { let _ = tx.commit().await; }
@@ -380,6 +392,16 @@ impl Database {
         let mut orphans = 0u64;
         for entry in entries.flatten() {
             let filename = entry.file_name().to_string_lossy().to_string();
+            // Thumbnails ({hash}_thumb.jpg) are not orphans if their original exists in DB
+            if filename.ends_with("_thumb.jpg") {
+                let base = filename.trim_end_matches("_thumb.jpg");
+                let original = format!("{}.png", base);
+                if !db_files.contains(&original) {
+                    let _ = std::fs::remove_file(entry.path());
+                    orphans += 1;
+                }
+                continue;
+            }
             if !db_files.contains(&filename) {
                 let _ = std::fs::remove_file(entry.path());
                 orphans += 1;
@@ -458,6 +480,59 @@ impl Database {
             log::warn!("DB: VACUUM failed (non-fatal): {}", e);
         } else {
             log::info!("DB: VACUUM complete.");
+        }
+    }
+
+    /// Re-scan all text clips and update subtype based on current detection rules.
+    pub async fn rescan_subtypes(&self) {
+        let rows: Vec<(i64, String)> = sqlx::query_as(
+            "SELECT id, text_preview FROM clips WHERE clip_type = 'text'"
+        ).fetch_all(&self.pool).await.unwrap_or_default();
+
+        let mut updated = 0u64;
+        for (id, preview) in &rows {
+            let subtype = crate::clipboard::detect_subtype(preview);
+            if let Ok(r) = sqlx::query("UPDATE clips SET subtype = ? WHERE id = ? AND COALESCE(subtype, '') != COALESCE(?, '')")
+                .bind(&subtype).bind(id).bind(&subtype)
+                .execute(&self.pool).await {
+                updated += r.rows_affected();
+            }
+        }
+        if updated > 0 {
+            log::info!("RESCAN: Updated subtype on {} clips", updated);
+        }
+    }
+
+    /// Generate JPEG thumbnails for existing images that don't have one yet.
+    async fn generate_missing_thumbnails(&self) {
+        let entries = match std::fs::read_dir(&self.images_dir) {
+            Ok(e) => e,
+            Err(_) => return,
+        };
+
+        let mut generated = 0u64;
+        for entry in entries.flatten() {
+            let filename = entry.file_name().to_string_lossy().to_string();
+            // Only process original PNGs, skip thumbnails
+            if !filename.ends_with(".png") || filename.contains("_thumb") { continue; }
+
+            let hash = filename.trim_end_matches(".png");
+            let thumb_filename = format!("{}_thumb.jpg", hash);
+            let thumb_path = self.images_dir.join(&thumb_filename);
+            if thumb_path.exists() { continue; }
+
+            // Read original and generate thumbnail
+            if let Ok(bytes) = std::fs::read(entry.path()) {
+                if let Some(thumb_bytes) = crate::clipboard::generate_thumbnail(&bytes) {
+                    if std::fs::write(&thumb_path, &thumb_bytes).is_ok() {
+                        generated += 1;
+                    }
+                }
+            }
+        }
+
+        if generated > 0 {
+            log::info!("DB: Generated {} missing thumbnails", generated);
         }
     }
 

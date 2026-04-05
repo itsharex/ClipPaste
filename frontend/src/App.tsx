@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
-import { ClipboardItem as AppClipboardItem, Settings, ClipType } from './types';
+import { ClipboardItem as AppClipboardItem, Settings } from './types';
 import { ClipList } from './components/ClipList';
 import { ControlBar } from './components/ControlBar';
 import { ContextMenu } from './components/ContextMenu';
@@ -30,7 +30,7 @@ function App() {
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
-  const [contentTypeFilter, setContentTypeFilter] = useState<ClipType | null>(null);
+  const [clipFilter, setClipFilter] = useState<string | null>(null);
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
   const [selectedClipIds, setSelectedClipIds] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
@@ -199,7 +199,7 @@ function App() {
         // Keep selectedFolder — user stays in their folder across window toggles
         setSearchQuery('');
         setSearchInput('');
-        setContentTypeFilter(null);
+        setClipFilter(null);
         setPreviewFolder(undefined);
         autoSelectFirstOnNextLoadRef.current = true;
         setWindowFocusCount((c) => c + 1);
@@ -384,34 +384,31 @@ function App() {
     openCreateModal, openRenameModal, closeModal: closeFolderModal,
   } = useFolderModal();
 
-  // Smart content type matching — regex patterns defined once outside render cycle
-  const matchesContentType = useCallback((clip: AppClipboardItem, filter: ClipType): boolean => {
-    if (filter === 'image') return clip.clip_type === 'image';
-    if (filter === 'url') {
-      return clip.clip_type === 'text' && RE_URL.test(clip.content.trim());
+  // Unified clip filter — matches by clip_type for base types, by subtype for smart collections
+  const CLIP_TYPE_KEYS = new Set(['text', 'image', 'html', 'rtf']);
+  const matchesClipFilter = useCallback((clip: AppClipboardItem, filter: string): boolean => {
+    if (CLIP_TYPE_KEYS.has(filter)) {
+      if (filter === 'text') {
+        // "text" = pure text, not url/path/file subtypes
+        return clip.clip_type === 'text'
+          && !RE_URL.test(clip.content.trim())
+          && !RE_FILE_PATH.test(clip.content.trim());
+      }
+      return clip.clip_type === filter;
     }
-    if (filter === 'file') {
-      return clip.clip_type === 'text' && RE_FILE_PATH.test(clip.content.trim());
-    }
-    if (filter === 'html') return clip.clip_type === 'html';
-    if (filter === 'rtf') return clip.clip_type === 'rtf';
-    if (filter === 'text') {
-      return clip.clip_type === 'text'
-        && !RE_URL.test(clip.content.trim())
-        && !RE_FILE_PATH.test(clip.content.trim());
-    }
-    return clip.clip_type === filter;
+    // Subtype filter (url, email, color, path, phone, json, code)
+    return clip.subtype === filter;
   }, []);
 
   const filteredClips = useMemo(() => {
-    if (!contentTypeFilter) return clips;
-    return clips.filter((c) => matchesContentType(c, contentTypeFilter));
-  }, [clips, contentTypeFilter, matchesContentType]);
+    if (!clipFilter) return clips;
+    return clips.filter((c) => matchesClipFilter(c, clipFilter));
+  }, [clips, clipFilter, matchesClipFilter]);
 
   const filteredPreviewClips = useMemo(() => {
-    if (!contentTypeFilter) return previewClips;
-    return previewClips.filter((c) => matchesContentType(c, contentTypeFilter));
-  }, [previewClips, contentTypeFilter, matchesContentType]);
+    if (!clipFilter) return previewClips;
+    return previewClips.filter((c) => matchesClipFilter(c, clipFilter));
+  }, [previewClips, clipFilter, matchesClipFilter]);
 
   const folderMap = useMemo(() => {
     const map: Record<string, string> = {};
@@ -604,8 +601,8 @@ function App() {
             onFolderHover={handleFolderHover}
             onFolderHoverEnd={handleFolderHoverEnd}
             theme={effectiveTheme}
-            contentTypeFilter={contentTypeFilter}
-            onContentTypeFilterChange={setContentTypeFilter}
+            clipFilter={clipFilter}
+            onClipFilterChange={setClipFilter}
             isIncognito={isIncognito}
             onToggleIncognito={toggleIncognito}
           />

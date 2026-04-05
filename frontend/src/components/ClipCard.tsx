@@ -3,7 +3,7 @@ import { clsx } from 'clsx';
 import { useMemo, memo, useState, useRef, useEffect, useCallback } from 'react';
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 import { LAYOUT, TOTAL_COLUMN_WIDTH, PREVIEW_CHAR_LIMIT } from '../constants';
-import { Copy, Check, Pin, Link, Mail, Palette, FolderOpen, StickyNote, Image as ImageIcon, Folder, ShieldAlert } from 'lucide-react';
+import { Copy, Check, Pin, Link, Mail, Palette, FolderOpen, StickyNote, Image as ImageIcon, Folder, ShieldAlert, Phone, Braces, Code2 } from 'lucide-react';
 import { formatDistanceToNowStrict } from 'date-fns';
 
 /** Image component that tries asset protocol first, falls back to base64 via get_clip */
@@ -56,6 +56,9 @@ const SUBTYPE_CONFIG: Record<string, { icon: typeof Link; label: string; color: 
   email: { icon: Mail, label: 'Email', color: 'text-emerald-400' },
   color: { icon: Palette, label: 'Color', color: 'text-pink-400' },
   path: { icon: FolderOpen, label: 'Path', color: 'text-amber-400' },
+  phone: { icon: Phone, label: 'Phone', color: 'text-cyan-400' },
+  json: { icon: Braces, label: 'JSON', color: 'text-orange-400' },
+  code: { icon: Code2, label: 'Code', color: 'text-violet-400' },
 };
 
 /** Highlight search matches in text */
@@ -132,12 +135,12 @@ export const ClipCard = memo(function ClipCard({
   // Memoize the content rendering — now subtype-aware
   const renderedContent = useMemo(() => {
     if (clip.clip_type === 'image') {
-      const imageSrc = clip.content ? convertFileSrc(clip.content) : '';
+      const displaySrc = (clip.thumbnail || clip.content) ? convertFileSrc(clip.thumbnail || clip.content) : '';
       return (
         <div className="flex h-full w-full select-none items-center justify-center rounded-md bg-black/20 p-1">
-          {clip.content ? (
+          {(clip.thumbnail || clip.content) ? (
             <ImageWithFallback
-              src={imageSrc}
+              src={displaySrc}
               clipId={clip.id}
               alt="Clipboard Image"
               className="max-h-full max-w-full rounded object-contain shadow-md"
@@ -215,13 +218,60 @@ export const ClipCard = memo(function ClipCard({
       );
     }
 
+    // Phone subtype
+    if (clip.subtype === 'phone') {
+      return (
+        <div className="flex h-full w-full flex-col gap-1.5">
+          <div className="flex items-center gap-1.5 rounded-md bg-cyan-500/10 px-1.5 py-1">
+            <Phone size={12} className="flex-shrink-0 text-cyan-400" />
+            <span className="text-[11px] font-semibold text-cyan-400">Phone</span>
+          </div>
+          <pre className="whitespace-pre-wrap break-all font-mono text-[14px] font-medium leading-snug text-foreground/90">
+            <HighlightText text={clip.content.trim()} query={searchQuery} />
+          </pre>
+        </div>
+      );
+    }
+
+    // JSON subtype — pretty-print preview
+    if (clip.subtype === 'json') {
+      let formatted = clip.content.substring(0, PREVIEW_CHAR_LIMIT);
+      try { formatted = JSON.stringify(JSON.parse(clip.content), null, 2).substring(0, PREVIEW_CHAR_LIMIT); } catch {}
+      return (
+        <div className="flex h-full w-full flex-col gap-1.5">
+          <div className="flex items-center gap-1.5 rounded-md bg-orange-500/10 px-1.5 py-1">
+            <Braces size={12} className="flex-shrink-0 text-orange-400" />
+            <span className="text-[11px] font-semibold text-orange-400">JSON</span>
+          </div>
+          <pre className="flex-1 whitespace-pre-wrap break-all font-mono text-[11px] leading-snug text-foreground/80">
+            <HighlightText text={formatted} query={searchQuery} />
+          </pre>
+        </div>
+      );
+    }
+
+    // Code subtype
+    if (clip.subtype === 'code') {
+      return (
+        <div className="flex h-full w-full flex-col gap-1.5">
+          <div className="flex items-center gap-1.5 rounded-md bg-violet-500/10 px-1.5 py-1">
+            <Code2 size={12} className="flex-shrink-0 text-violet-400" />
+            <span className="text-[11px] font-semibold text-violet-400">Code</span>
+          </div>
+          <pre className="flex-1 whitespace-pre-wrap break-all font-mono text-[11px] leading-snug text-foreground/80">
+            <HighlightText text={clip.content.substring(0, PREVIEW_CHAR_LIMIT)} query={searchQuery} />
+          </pre>
+        </div>
+      );
+    }
+
     // Default text
     return (
       <pre className="whitespace-pre-wrap break-all font-mono text-[13px] leading-tight text-foreground">
         <span><HighlightText text={clip.content.substring(0, PREVIEW_CHAR_LIMIT)} query={searchQuery} /></span>
       </pre>
     );
-  }, [clip.clip_type, clip.content, clip.subtype, searchQuery]);
+  }, [clip.clip_type, clip.content, clip.thumbnail, clip.subtype, searchQuery]);
 
   // Generate distinct color based on source app name
   const getAppGradient = (name: string) => {

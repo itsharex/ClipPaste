@@ -13,6 +13,7 @@ export interface ClipboardItem {
   note: string | null;
   paste_count: number;
   is_sensitive: boolean;
+  thumbnail: string | null;
 }
 
 export interface FolderItem {

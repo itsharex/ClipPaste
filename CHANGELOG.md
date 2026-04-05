@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.5] - 2026-04-05
+
+### Added
+- **Image thumbnails** — auto-generate 280px JPEG thumbnails for clipboard images; list view loads lightweight thumbnails instead of full PNGs, reducing memory and load time
+- **Smart Collections** — auto-categorize text clips by subtype: URL, email, color, path, phone, JSON, code; each gets a dedicated badge and custom card renderer
+- **Subtype filter** — compact inline filter buttons in search bar to quickly filter by content type or smart subtype
+- **`rescan_subtypes` command** — re-scan all existing text clips with latest subtype detection rules (runs on startup)
+
+### Fixed
+- **URL false-positive sensitive blur** — URLs no longer trigger the password-like string detection (mixed char classes in domains/paths)
+
+### Changed
+- **Unified clip filter** — merged content type and subtype filters into one compact row (9 icons), removed duplicates (url, file)
+- **Thumbnail cleanup** — delete, bulk delete, max_items enforcement, auto-delete, and orphan cleanup all handle thumbnail files alongside originals
+
+---
+
 ## [1.7.4] - 2026-04-04
 
 ### Added

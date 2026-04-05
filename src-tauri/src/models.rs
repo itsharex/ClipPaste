@@ -68,6 +68,7 @@ pub struct ClipboardItem {
     pub note: Option<String>,
     pub paste_count: i64,
     pub is_sensitive: bool,
+    pub thumbnail: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
