@@ -88,7 +88,6 @@ function App() {
   // --- Clip Actions Hook ---
   const {
     loadClips,
-    autoSelectFirstOnNextLoadRef,
     handleDelete,
     handlePaste,
     handleCopy,

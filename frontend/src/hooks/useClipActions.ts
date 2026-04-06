@@ -39,8 +39,6 @@ export function useClipActions(opts: UseClipActionsOpts) {
 
   // Monotonic counter to discard stale responses from older queries
   const loadGenRef = useRef(0);
-  const autoSelectFirstOnNextLoadRef = useRef(false);
-
   const loadClips = useCallback(
     async (folderId: string | null, append: boolean = false, searchOverride: string = '') => {
       const thisGen = ++loadGenRef.current;
@@ -77,10 +75,6 @@ export function useClipActions(opts: UseClipActionsOpts) {
           });
         } else {
           setClips(data);
-          if (autoSelectFirstOnNextLoadRef.current) {
-            autoSelectFirstOnNextLoadRef.current = false;
-            setSelectedClipId(data[0]?.id ?? null);
-          }
         }
 
         setHasMore(data.length === PAGE_SIZE);
@@ -215,7 +209,6 @@ export function useClipActions(opts: UseClipActionsOpts) {
   return {
     loadClips,
     loadGenRef,
-    autoSelectFirstOnNextLoadRef,
     handleDelete,
     handlePaste,
     handleCopy,
