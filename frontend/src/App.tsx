@@ -201,7 +201,6 @@ function App() {
         setSearchInput('');
         setClipFilter(null);
         setPreviewFolder(undefined);
-        autoSelectFirstOnNextLoadRef.current = true;
         setWindowFocusCount((c) => c + 1);
         // Use batch IPC when in "All" view with no search — 1 call instead of 3
         if (!selectedFolderRef.current) {
@@ -336,18 +335,20 @@ function App() {
     },
     onNavigateUp: () => {
       if (editingClip || isLoading) return;
-      const currentIndex = clips.findIndex((c) => c.id === selectedClipId);
+      const displayedClips = isPreviewing ? filteredPreviewClips : filteredClips;
+      const currentIndex = displayedClips.findIndex((c) => c.id === selectedClipId);
       if (currentIndex > 0) {
-        setSelectedClipId(clips[currentIndex - 1].id);
+        setSelectedClipId(displayedClips[currentIndex - 1].id);
       }
     },
     onNavigateDown: () => {
       if (editingClip || isLoading) return;
-      const currentIndex = clips.findIndex((c) => c.id === selectedClipId);
-      if (currentIndex === -1 && clips.length > 0) {
-        setSelectedClipId(clips[0].id);
-      } else if (currentIndex < clips.length - 1) {
-        setSelectedClipId(clips[currentIndex + 1].id);
+      const displayedClips = isPreviewing ? filteredPreviewClips : filteredClips;
+      const currentIndex = displayedClips.findIndex((c) => c.id === selectedClipId);
+      if (currentIndex === -1 && displayedClips.length > 0) {
+        setSelectedClipId(displayedClips[0].id);
+      } else if (currentIndex < displayedClips.length - 1) {
+        setSelectedClipId(displayedClips[currentIndex + 1].id);
       }
     },
     onPaste: () => {
