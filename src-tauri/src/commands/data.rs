@@ -440,10 +440,9 @@ pub async fn import_data(app: AppHandle, db: tauri::State<'_, Arc<Database>>) ->
                 std::fs::create_dir_all(parent).ok();
             }
 
-            // Verify resolved path is actually inside temp_dir (prevents symlink escape)
-            let canonical_out = out_path.canonicalize().unwrap_or_else(|_| out_path.clone());
-            let canonical_temp = temp_dir_clone.canonicalize().unwrap_or_else(|_| temp_dir_clone.clone());
-            if !canonical_out.starts_with(&canonical_temp) {
+            // Verify path is inside temp_dir (prevent path escape)
+            // Use normalized string comparison — canonicalize() fails on non-existent files on Windows
+            if !out_path.starts_with(&temp_dir_clone) {
                 log::warn!("Import: path escape detected, skipping: {}", name);
                 continue;
             }
