@@ -329,6 +329,7 @@ async fn apply_delta(
         };
 
         if local_clips.contains_key(&clip.uuid) {
+            // UUID match — update in place
             sqlx::query(
                 "UPDATE clips SET clip_type=?, content=?, text_preview=?, content_hash=?,
                         folder_id=?, source_app=?, metadata=?, subtype=?, note=?,
@@ -342,19 +343,41 @@ async fn apply_delta(
             .bind(&clip.updated_at).bind(&clip.uuid)
             .execute(&db.pool).await?;
         } else {
-            sqlx::query(
-                "INSERT INTO clips (uuid, clip_type, content, text_preview, content_hash,
-                        folder_id, is_deleted, source_app, metadata, subtype, note,
-                        paste_count, is_pinned, is_sensitive, created_at, last_accessed, updated_at)
-                 VALUES (?,?,?,?,?,?,0,?,?,?,?,?,?,?,?,?,?)"
-            )
-            .bind(&clip.uuid).bind(&clip.clip_type).bind(&content)
-            .bind(&clip.text_preview).bind(&clip.content_hash)
-            .bind(folder_id).bind(&clip.source_app).bind(&clip.metadata)
-            .bind(&clip.subtype).bind(&clip.note).bind(clip.paste_count)
-            .bind(clip.is_pinned).bind(clip.is_sensitive)
-            .bind(&clip.created_at).bind(&clip.updated_at).bind(&clip.updated_at)
-            .execute(&db.pool).await?;
+            // UUID not found locally — check if same content already exists (e.g. after DB repair)
+            let existing_by_hash: Option<String> = sqlx::query_scalar(
+                "SELECT uuid FROM clips WHERE content_hash = ? LIMIT 1"
+            ).bind(&clip.content_hash).fetch_optional(&db.pool).await?;
+
+            if let Some(local_uuid) = existing_by_hash {
+                // Same content exists with different UUID — adopt remote UUID and update
+                sqlx::query(
+                    "UPDATE clips SET uuid=?, clip_type=?, text_preview=?, folder_id=?,
+                            source_app=?, metadata=?, subtype=?, note=?,
+                            paste_count=MAX(paste_count,?), is_pinned=?, is_sensitive=?, updated_at=?
+                     WHERE uuid=?"
+                )
+                .bind(&clip.uuid).bind(&clip.clip_type).bind(&clip.text_preview)
+                .bind(folder_id).bind(&clip.source_app).bind(&clip.metadata)
+                .bind(&clip.subtype).bind(&clip.note).bind(clip.paste_count)
+                .bind(clip.is_pinned).bind(clip.is_sensitive)
+                .bind(&clip.updated_at).bind(&local_uuid)
+                .execute(&db.pool).await?;
+            } else {
+                // Truly new clip — insert
+                sqlx::query(
+                    "INSERT INTO clips (uuid, clip_type, content, text_preview, content_hash,
+                            folder_id, is_deleted, source_app, metadata, subtype, note,
+                            paste_count, is_pinned, is_sensitive, created_at, last_accessed, updated_at)
+                     VALUES (?,?,?,?,?,?,0,?,?,?,?,?,?,?,?,?,?)"
+                )
+                .bind(&clip.uuid).bind(&clip.clip_type).bind(&content)
+                .bind(&clip.text_preview).bind(&clip.content_hash)
+                .bind(folder_id).bind(&clip.source_app).bind(&clip.metadata)
+                .bind(&clip.subtype).bind(&clip.note).bind(clip.paste_count)
+                .bind(clip.is_pinned).bind(clip.is_sensitive)
+                .bind(&clip.created_at).bind(&clip.updated_at).bind(&clip.updated_at)
+                .execute(&db.pool).await?;
+            }
         }
         crate::clipboard::add_to_search_cache(&clip.uuid, &clip.text_preview, folder_id);
         report.pulled_clips += 1;
@@ -369,19 +392,30 @@ async fn apply_delta(
         if !should_apply { continue; }
 
         if local_folders.contains_key(&folder.uuid) {
-            sqlx::query("UPDATE folders SET name=?, icon=?, color=?, position=?, updated_at=? WHERE uuid=?")
-                .bind(&folder.name).bind(&folder.icon).bind(&folder.color)
+            // UUID match — update in place (keep local name to preserve user's organization)
+            sqlx::query("UPDATE folders SET icon=?, color=?, position=?, updated_at=? WHERE uuid=?")
+                .bind(&folder.icon).bind(&folder.color)
                 .bind(folder.position).bind(&folder.updated_at).bind(&folder.uuid)
                 .execute(&db.pool).await?;
         } else {
-            let name_exists: Option<i64> = sqlx::query_scalar("SELECT id FROM folders WHERE name=?")
+            // UUID not found locally — check if same-name folder exists (e.g. after DB repair)
+            let existing_by_name: Option<i64> = sqlx::query_scalar("SELECT id FROM folders WHERE name = ?")
                 .bind(&folder.name).fetch_optional(&db.pool).await?;
-            let name = if name_exists.is_some() { format!("{} (synced)", folder.name) } else { folder.name.clone() };
 
-            sqlx::query("INSERT INTO folders (uuid, name, icon, color, position, created_at, updated_at) VALUES (?,?,?,?,?,?,?)")
-                .bind(&folder.uuid).bind(&name).bind(&folder.icon).bind(&folder.color)
-                .bind(folder.position).bind(&folder.created_at).bind(&folder.updated_at)
-                .execute(&db.pool).await?;
+            if let Some(local_id) = existing_by_name {
+                // Same-name folder exists — adopt remote UUID (reconcile identity)
+                log::info!("Sync: reconciling folder '{}' — adopting remote uuid={}", folder.name, folder.uuid);
+                sqlx::query("UPDATE folders SET uuid=?, icon=?, color=?, position=?, updated_at=? WHERE id=?")
+                    .bind(&folder.uuid).bind(&folder.icon).bind(&folder.color)
+                    .bind(folder.position).bind(&folder.updated_at).bind(local_id)
+                    .execute(&db.pool).await?;
+            } else {
+                // Truly new folder — insert
+                sqlx::query("INSERT INTO folders (uuid, name, icon, color, position, created_at, updated_at) VALUES (?,?,?,?,?,?,?)")
+                    .bind(&folder.uuid).bind(&folder.name).bind(&folder.icon).bind(&folder.color)
+                    .bind(folder.position).bind(&folder.created_at).bind(&folder.updated_at)
+                    .execute(&db.pool).await?;
+            }
         }
         report.pulled_folders += 1;
     }
