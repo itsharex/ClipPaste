@@ -467,9 +467,22 @@ pub(crate) async fn apply_delta(
             "folder" => {
                 if let Some(fid) = sqlx::query_scalar::<_, i64>("SELECT id FROM folders WHERE uuid=?")
                     .bind(&tombstone.uuid).fetch_optional(&db.pool).await? {
+                    // Collect affected clip uuids BEFORE the update so we can patch the cache
+                    let affected: Vec<String> = sqlx::query_scalar(
+                        "SELECT uuid FROM clips WHERE folder_id=?"
+                    ).bind(fid).fetch_all(&db.pool).await.unwrap_or_default();
                     sqlx::query("UPDATE clips SET folder_id=NULL, updated_at=CURRENT_TIMESTAMP WHERE folder_id=?")
                         .bind(fid).execute(&db.pool).await?;
                     sqlx::query("DELETE FROM folders WHERE id=?").bind(fid).execute(&db.pool).await?;
+                    // Patch in-memory search cache so clips are no longer associated with the deleted folder
+                    {
+                        let mut cache = crate::clipboard::SEARCH_CACHE.write();
+                        for uuid in &affected {
+                            if let Some(entry) = cache.get_mut(uuid) {
+                                entry.1 = None;
+                            }
+                        }
+                    }
                     report.deleted += 1;
                 }
             }

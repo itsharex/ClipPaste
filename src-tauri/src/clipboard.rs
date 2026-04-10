@@ -114,6 +114,21 @@ pub fn remove_from_search_cache(uuid: &str) {
     cache.remove(uuid);
 }
 
+/// Re-sync a single clip's entry in the search cache from DB.
+/// Used by the re-copy self-heal path: if a clip's cache entry was missing or stale,
+/// re-copying the same content forces it back into the cache with current folder_id + note.
+pub async fn refresh_search_cache_for_clip(pool: &sqlx::SqlitePool, uuid: &str, preview: &str) {
+    let row: Option<(Option<i64>, Option<String>)> = sqlx::query_as(
+        "SELECT folder_id, note FROM clips WHERE uuid = ?"
+    ).bind(uuid).fetch_optional(pool).await.unwrap_or(None);
+    let (fid, note) = row.unwrap_or((None, None));
+    let mut cache = SEARCH_CACHE.write();
+    cache.insert(
+        uuid.to_string(),
+        (preview.to_lowercase(), fid, note.unwrap_or_default().to_lowercase()),
+    );
+}
+
 /// Update a clip's note in the search cache — O(1) with HashMap
 pub fn update_note_in_search_cache(uuid: &str, note: Option<&str>) {
     let mut cache = SEARCH_CACHE.write();
@@ -593,6 +608,10 @@ async fn process_clipboard_change(app: AppHandle, db: Arc<Database>, source_app_
             log::error!("CLIPBOARD: Failed to update existing clip: {}", e);
             return;
         }
+
+        // Self-heal: re-copying a clip should make it searchable again even if
+        // it was missing from the in-memory cache for any reason.
+        refresh_search_cache_for_clip(pool, &existing_id, &clip_preview).await;
 
         let _ = app.emit("clipboard-change", &serde_json::json!({
             "id": existing_id,

@@ -601,6 +601,8 @@ impl Database {
                     let filename = String::from_utf8_lossy(content).into_owned();
                     self.remove_image_and_thumb(&filename);
                 }
+                // Rebuild search cache so deleted clips are dropped from in-memory index
+                crate::clipboard::load_search_cache(&self.pool).await;
             }
             Ok(_) => { let _ = tx.commit().await; }
             Err(e) => {

@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.8.6] - 2026-04-10
+
+### Fixed
+- **Re-copying a clip self-heals the search cache** — if a clip's entry was missing from the in-memory `SEARCH_CACHE` for any reason, copying the same content again now re-inserts it (with current `folder_id` + `note` from DB), restoring searchability without needing a restart
+- **Folder tombstone updates search cache** — when a folder is deleted via sync tombstone from another device, affected clips' cache entries are now patched to `folder_id = None`, preventing mismatches between DB state and cache (folder view + search rank)
+- **`enforce_auto_delete` rebuilds search cache** — auto-delete now reloads `SEARCH_CACHE` after trimming old clips, matching `enforce_max_items` behavior; prevents stale UUIDs in the in-memory index
+
+### Added
+- **3 regression tests** for the search cache fixes above (self-heal, folder tombstone, auto-delete); total Rust tests: 126 → 129
+- New helper `clipboard::refresh_search_cache_for_clip` — reusable cache resync primitive used by the re-copy self-heal path
+
+---
+
 ## [1.8.5] - 2026-04-09
 
 ### Added

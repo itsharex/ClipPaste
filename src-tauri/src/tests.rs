@@ -1090,6 +1090,78 @@ mod tests {
             assert_eq!(fk, 1, "Foreign keys should be enabled");
         }
 
+        // --- v1.8.6 bug-fix tests: search cache invariants ---
+
+        #[tokio::test]
+        async fn refresh_search_cache_for_clip_self_heals_missing_entry() {
+            use crate::clipboard::{SEARCH_CACHE, refresh_search_cache_for_clip};
+
+            let db = setup_test_db().await;
+
+            // Create a folder + clip filed inside it, with a note
+            sqlx::query("INSERT INTO folders (uuid, name, position) VALUES ('selfheal-folder', 'SelfHeal', 0)")
+                .execute(&db.pool).await.unwrap();
+            let folder_id: i64 = sqlx::query_scalar("SELECT id FROM folders WHERE uuid='selfheal-folder'")
+                .fetch_one(&db.pool).await.unwrap();
+            sqlx::query(
+                "INSERT INTO clips (uuid, clip_type, content, text_preview, content_hash, folder_id, note, is_deleted, is_pinned, created_at, last_accessed)
+                 VALUES ('selfheal-clip', 'text', 'Docker Compose', 'Docker Compose', 'hash-selfheal', ?, 'My Note', 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+            ).bind(folder_id).execute(&db.pool).await.unwrap();
+
+            // Simulate the buggy state: cache is missing the entry
+            SEARCH_CACHE.write().remove("selfheal-clip");
+            assert!(SEARCH_CACHE.read().get("selfheal-clip").is_none(), "Precondition: cache empty");
+
+            // Trigger self-heal (what the re-copy dedup branch now calls)
+            refresh_search_cache_for_clip(&db.pool, "selfheal-clip", "Docker Compose").await;
+
+            // Verify entry is back, with correct folder_id, lowercased preview, and lowercased note
+            let cache = SEARCH_CACHE.read();
+            let entry = cache.get("selfheal-clip").expect("Entry must be re-inserted after self-heal");
+            assert_eq!(entry.0, "docker compose", "preview should be lowercased");
+            assert_eq!(entry.1, Some(folder_id), "folder_id must be loaded from DB");
+            assert_eq!(entry.2, "my note", "note should be lowercased");
+        }
+
+        #[tokio::test]
+        async fn enforce_auto_delete_clears_search_cache_entries() {
+            use crate::clipboard::{SEARCH_CACHE, add_to_search_cache};
+
+            let db = setup_test_db().await;
+
+            // Configure auto_delete_days = 7
+            sqlx::query("INSERT INTO settings (key, value) VALUES ('auto_delete_days', '7')")
+                .execute(&db.pool).await.unwrap();
+
+            // Insert one old clip (>7 days) and one fresh clip
+            sqlx::query(
+                "INSERT INTO clips (uuid, clip_type, content, text_preview, content_hash, is_deleted, is_pinned, created_at, last_accessed)
+                 VALUES ('autodel-old', 'text', 'old', 'old', 'hash-old', 0, 0, datetime('now', '-30 days'), CURRENT_TIMESTAMP)"
+            ).execute(&db.pool).await.unwrap();
+            sqlx::query(
+                "INSERT INTO clips (uuid, clip_type, content, text_preview, content_hash, is_deleted, is_pinned, created_at, last_accessed)
+                 VALUES ('autodel-fresh', 'text', 'fresh', 'fresh', 'hash-fresh', 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+            ).execute(&db.pool).await.unwrap();
+
+            // Seed cache with both
+            add_to_search_cache("autodel-old", "old", None);
+            add_to_search_cache("autodel-fresh", "fresh", None);
+            assert!(SEARCH_CACHE.read().contains_key("autodel-old"));
+            assert!(SEARCH_CACHE.read().contains_key("autodel-fresh"));
+
+            db.enforce_auto_delete().await;
+
+            // DB row is gone
+            let old_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM clips WHERE uuid='autodel-old'")
+                .fetch_one(&db.pool).await.unwrap();
+            assert_eq!(old_count, 0, "Old clip should be deleted from DB");
+
+            // Cache should NOT contain the deleted clip (rebuilt by load_search_cache)
+            let cache = SEARCH_CACHE.read();
+            assert!(!cache.contains_key("autodel-old"), "Stale UUID must be evicted from cache");
+            assert!(cache.contains_key("autodel-fresh"), "Fresh clip should remain in cache");
+        }
+
         // --- Cleanup orphan images test ---
 
         #[tokio::test]
@@ -1616,6 +1688,42 @@ mod tests {
             assert_eq!(clip_folder.unwrap(), None, "Clip should be unfiled (folder_id = NULL)");
 
             assert_eq!(report.deleted, 1);
+        }
+
+        #[tokio::test]
+        async fn apply_delta_folder_tombstone_clears_search_cache_folder_id() {
+            use crate::clipboard::{SEARCH_CACHE, add_to_search_cache};
+
+            let db = setup_test_db().await;
+            let drive = fake_drive();
+            let mut report = SyncReport::default();
+
+            // Insert folder + 2 clips inside it
+            let folder_id = insert_folder_full(&db, "tomb-cache-folder", "Docker", 0, "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z").await;
+            insert_clip_full(&db, "tomb-clip-1", "docker compose up", "hash-tc1", Some(folder_id), "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z").await;
+            insert_clip_full(&db, "tomb-clip-2", "docker ps", "hash-tc2", Some(folder_id), "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z").await;
+
+            // Seed search cache with the folder_id (mirrors what load_search_cache would do)
+            add_to_search_cache("tomb-clip-1", "docker compose up", Some(folder_id));
+            add_to_search_cache("tomb-clip-2", "docker ps", Some(folder_id));
+            assert_eq!(SEARCH_CACHE.read().get("tomb-clip-1").unwrap().1, Some(folder_id));
+
+            // Apply folder tombstone
+            let delta = make_delta(
+                vec![],
+                vec![],
+                vec![Tombstone {
+                    uuid: "tomb-cache-folder".to_string(),
+                    entity_type: "folder".to_string(),
+                    deleted_at: "2024-02-01T00:00:00Z".to_string(),
+                }],
+            );
+            apply_delta(&db, &delta, false, &drive, &mut report).await.unwrap();
+
+            // Cache entries should now have folder_id = None (matching DB state)
+            let cache = SEARCH_CACHE.read();
+            assert_eq!(cache.get("tomb-clip-1").unwrap().1, None, "Cache folder_id must be cleared after folder tombstone");
+            assert_eq!(cache.get("tomb-clip-2").unwrap().1, None, "Cache folder_id must be cleared after folder tombstone");
         }
 
         #[tokio::test]
