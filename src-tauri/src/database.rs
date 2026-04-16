@@ -457,6 +457,54 @@ impl Database {
             log::info!("DB: Applied migration v7 (sync: updated_at, folder UUIDs, sync_meta, tombstones, device_id={})", device_id);
         }
 
+        if version < 8 {
+            // --- Scratchpad: persistent notes/snippets (not clips) ---
+            sqlx::query(r#"
+                CREATE TABLE IF NOT EXISTS scratchpads (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    uuid TEXT NOT NULL UNIQUE,
+                    content TEXT NOT NULL DEFAULT '',
+                    position INTEGER DEFAULT 0,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            "#).execute(&self.pool).await?;
+
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_scratchpads_updated ON scratchpads(updated_at)")
+                .execute(&self.pool).await?;
+
+            self.set_schema_version(8).await;
+            log::info!("DB: Applied migration v8 (scratchpads table)");
+        }
+
+        if version < 9 {
+            let _ = sqlx::query("ALTER TABLE scratchpads ADD COLUMN title TEXT NOT NULL DEFAULT ''")
+                .execute(&self.pool).await;
+            self.set_schema_version(9).await;
+            log::info!("DB: Applied migration v9 (scratchpad title column)");
+        }
+
+        if version < 10 {
+            let _ = sqlx::query("ALTER TABLE scratchpads ADD COLUMN fields_json TEXT DEFAULT NULL")
+                .execute(&self.pool).await;
+            self.set_schema_version(10).await;
+            log::info!("DB: Applied migration v10 (scratchpad fields_json)");
+        }
+
+        if version < 11 {
+            let _ = sqlx::query("ALTER TABLE scratchpads ADD COLUMN is_pinned INTEGER DEFAULT 0")
+                .execute(&self.pool).await;
+            self.set_schema_version(11).await;
+            log::info!("DB: Applied migration v11 (scratchpad is_pinned)");
+        }
+
+        if version < 12 {
+            let _ = sqlx::query("ALTER TABLE scratchpads ADD COLUMN color TEXT DEFAULT NULL")
+                .execute(&self.pool).await;
+            self.set_schema_version(12).await;
+            log::info!("DB: Applied migration v12 (scratchpad color)");
+        }
+
         // === Migrate image blobs to disk ===
         // Images previously stored as BLOBs in content column are now stored as files.
         // content column will hold just the filename (e.g. "abc123.png").

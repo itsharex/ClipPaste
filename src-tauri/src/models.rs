@@ -83,3 +83,31 @@ pub struct FolderItem {
     pub is_system: bool,
     pub item_count: i64,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct Scratchpad {
+    pub id: i64,
+    pub uuid: String,
+    pub title: String,
+    pub content: String,
+    pub fields_json: Option<String>,
+    pub is_pinned: bool,
+    pub color: Option<String>,
+    pub position: i64,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScratchpadItem {
+    pub id: String,
+    pub uuid: String,
+    pub title: String,
+    pub content: String,
+    pub fields_json: Option<String>,
+    pub is_pinned: bool,
+    pub color: Option<String>,
+    pub position: i64,
+    pub created_at: String,
+    pub updated_at: Option<String>,
+}

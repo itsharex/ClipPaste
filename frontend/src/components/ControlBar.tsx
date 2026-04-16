@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { FolderItem } from '../types';
-import { Search, Plus, MoreHorizontal, X, Layers, FileText, Image, Link, EyeOff, Flame, Mail, Palette, FolderOpen, Phone, Braces, Code2 } from 'lucide-react';
+import { Search, Plus, MoreHorizontal, X, Layers, FileText, Image, Link, EyeOff, Flame, Mail, Palette, FolderOpen, Phone, Braces, Code2, StickyNote } from 'lucide-react';
 import { clsx } from 'clsx';
 import { FOLDER_ICON_MAP } from './FolderModal';
 import { type LucideIcon } from 'lucide-react';
@@ -84,6 +84,7 @@ interface ControlBarProps {
   onClipFilterChange?: (filter: string | null) => void;
   isIncognito?: boolean;
   onToggleIncognito?: () => void;
+  onToggleScratchpad?: () => void;
 }
 
 export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(function ControlBar(
@@ -111,6 +112,7 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
     onClipFilterChange,
     isIncognito,
     onToggleIncognito,
+    onToggleScratchpad,
   },
   ref
 ) {
@@ -498,6 +500,16 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
         style={{ WebkitAppRegion: 'no-drag' } as any}
         onDoubleClick={(e) => e.stopPropagation()}
       >
+        {onToggleScratchpad && (
+          <button
+            onClick={onToggleScratchpad}
+            className="rounded-lg p-2 text-amber-400/60 transition-colors hover:bg-amber-500/10 hover:text-amber-400"
+            title="Toggle scratchpad"
+            aria-label="Toggle scratchpad"
+          >
+            <StickyNote size={18} />
+          </button>
+        )}
         {onToggleIncognito && (
           <button
             onClick={onToggleIncognito}

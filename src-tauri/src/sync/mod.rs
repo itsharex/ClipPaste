@@ -40,7 +40,11 @@ pub async fn get_sync_status(db: &Database) -> SyncStatus {
         SyncState::Idle
     };
 
-    let pending_changes = count_pending_changes(db, &last_sync_at).await;
+    // Pending changes are counted against the push watermark (what hasn't been uploaded yet),
+    // falling back to last_sync_at for installs upgrading from v1.8.6 or earlier.
+    let push_base = db.get_setting("sync_push_base_at").await.unwrap_or(None)
+        .or_else(|| last_sync_at.clone());
+    let pending_changes = count_pending_changes(db, &push_base).await;
 
     SyncStatus {
         state,

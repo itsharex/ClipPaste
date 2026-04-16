@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**ClipPaste** is a cross-platform clipboard history manager for **Windows and Linux**, built with **Tauri v2** (Rust backend) + **React/TypeScript** (frontend). Package name: `clippaste`, version: `1.8.6`.
+**ClipPaste** is a cross-platform clipboard history manager for **Windows and Linux**, built with **Tauri v2** (Rust backend) + **React/TypeScript** (frontend). Package name: `clippaste`, version: `1.9.0`.
 
 ### Platform Support
 
@@ -66,10 +66,12 @@ ClipPaste/
 │   │   ├── useFolderPreview.ts # Folder hover preview with cache
 │   │   ├── useContextMenu.ts  # Right-click context menu state
 │   │   ├── useFolderModal.ts  # Create/rename folder modal state
-│   │   └── useBatchActions.ts # Bulk delete, move, paste operations
+│   │   ├── useBatchActions.ts # Bulk delete, move, paste operations
+│   │   └── useScratchpad.ts   # Auto-creates scratchpad sidebar window
 │   ├── utils.ts           # Shared helpers (base64ToBlob)
 │   ├── windows/
-│   │   └── SettingsWindow.tsx
+│   │   ├── SettingsWindow.tsx
+│   │   └── ScratchpadWindow.tsx # Sidebar scratchpad (separate window)
 │   ├── types/index.ts     # TypeScript types
 │   └── constants.ts       # Layout constants (WINDOW_HEIGHT=298, sync with Rust)
 │
@@ -84,7 +86,8 @@ ClipPaste/
 │   │   ├── data.rs        # export/import, dashboard, timeline, file/folder picker
 │   │   ├── window.rs      # show/hide/focus, dragging, ping, incognito toggle
 │   │   ├── helpers.rs     # clip_to_item_async, check_auto_paste_and_hide, clipboard_write_text
-│   │   └── sync.rs        # Google Drive sync commands
+│   │   ├── sync.rs        # Google Drive sync commands
+│   │   └── scratchpads.rs # Scratchpad CRUD + paste + pin
 │   ├── sync/              # Google Drive sync module
 │   │   ├── mod.rs         # Sync orchestration, token management, background auto-sync
 │   │   ├── oauth.rs       # OAuth2 loopback flow, token exchange/refresh
@@ -117,6 +120,8 @@ clips (id, uuid, clip_type, content BLOB, text_preview, content_hash,
 folders (id, name, icon, color, is_system, position, created_at, uuid, updated_at)
 settings (key TEXT PK, value TEXT)
 ignored_apps (id, app_name UNIQUE)
+scratchpads (id, uuid, title, content, fields_json, is_pinned, color,
+             position, created_at, updated_at)
 sync_meta (key TEXT PK, value TEXT)          -- device_id, encryption_salt, etc.
 sync_tombstones (uuid TEXT PK, entity_type TEXT, deleted_at DATETIME)
 ```
@@ -147,6 +152,10 @@ get_clipboard_history_size, clear_clipboard_history, clear_all_clips, remove_dup
 export_data, import_data, get_dashboard_stats, get_clips_by_date, get_clip_dates
 pick_file, pick_folder
 
+# Scratchpad
+get_scratchpads, create_scratchpad, update_scratchpad, delete_scratchpad
+reorder_scratchpads, toggle_scratchpad_pin, scratchpad_paste
+
 # Sync (Google Drive)
 get_sync_status, get_sync_settings, save_sync_settings
 gdrive_authorize, gdrive_disconnect
@@ -161,7 +170,8 @@ sync_now
 4. **Window effects (Windows)**: Mica / Mica Alt (Tabbed) / Acrylic / Blur / Clear, using `window-vibrancy` fork
 5. **Search**: Client-side pre-filter (instant) + backend LIKE query (skip image BLOBs, 2000-char text_preview). Debounce 80ms. Generation counter discards stale responses
 6. **Drag-copy**: HTML5 Drag API — cards are `draggable`, `dataTransfer` carries text/plain or image file. Works for both internal folder moves and external app drops
-7. **Google Drive sync**: `sync/protocol.rs` — delta-based sync via Google Drive appDataFolder. Full state uploaded on first sync, then only small delta files for changes. Auto-compact when >50 deltas accumulate. Background auto-sync task polls at configurable interval.
+7. **Google Drive sync**: `sync/protocol.rs` — delta-based sync via Google Drive appDataFolder. Full state uploaded on first sync, then only small delta files for changes. Auto-compact when >50 deltas accumulate.
+8. **Scratchpad**: Separate always-on-top window docked to right edge of screen. Collapsed: 14×80px hover tab. Hover → expands to 300px side panel. Click paste on note → centered 520×420 modal for edit-before-paste. Scratchpad notes are independent of clips — not affected by clip auto-delete or clear history. Synced via Google Drive alongside clips/folders. Background auto-sync task polls at configurable interval.
 
 ## Sync Architecture
 
@@ -253,6 +263,10 @@ pnpm format             # Prettier format frontend/src/**
 - Google OAuth2 CLIENT_ID/SECRET are embedded in `sync/oauth.rs` — safe for desktop apps per Google's guidelines
 - Sync uses delta-based approach: full state on first sync, then small delta files for changes. Auto-compact every 50 deltas
 - Each user's sync data is stored in their own Google Drive appDataFolder (hidden, isolated per-user per-app)
+- Scratchpad window (`label: 'scratchpad'`) is auto-created 2s after main app mount, URL: `index.html?window=scratchpad`
+- Scratchpad notes have their own DB table `scratchpads` with `uuid`, `title`, `content`, `color`, `is_pinned`, `fields_json`
+- Scratchpad sync: `SyncScratchpad` included in `SyncState`/`SyncDelta`, tombstone entity_type `"scratchpad"`
+- `scratchpad_paste` command: writes clipboard → hides scratchpad window → Shift+Insert (separate from clip paste flow)
 
 ## Folder Protection Rules
 

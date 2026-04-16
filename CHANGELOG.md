@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+- **Scratchpad sidebar** — persistent notes panel docked to right edge of screen, independent of clipboard history
+  - Auto-starts with ClipPaste as a separate always-on-top window
+  - Collapsed: thin 14px hover tab; hover → expands to 300px side panel
+  - Click paste on note → centered 520×420 modal for edit-before-paste (Ctrl+Enter to paste)
+  - Notes support title, content, color (8 presets), pin-to-top, drag reorder, drag-to-external-apps
+  - Search notes by title/content
+  - Panel pin: click inside panel → stays open, only closes on X or Esc
+  - Aurora gradient background (violet/blue/pink/teal) with depth
+  - Full Google Drive sync support (scratchpads included in delta protocol, tombstone propagation)
+- DB migrations v8–v12: `scratchpads` table with `uuid`, `title`, `content`, `fields_json`, `is_pinned`, `color`, `position`
+- 7 new Tauri commands: `get_scratchpads`, `create_scratchpad`, `update_scratchpad`, `delete_scratchpad`, `reorder_scratchpads`, `toggle_scratchpad_pin`, `scratchpad_paste`
+
+---
+
 ## [1.8.6] - 2026-04-10
 
 ### Fixed

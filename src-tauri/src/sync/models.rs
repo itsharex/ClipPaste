@@ -71,6 +71,23 @@ pub struct SyncFolder {
     pub updated_at: String,
 }
 
+/// Represents a scratchpad note serialized for sync
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncScratchpad {
+    pub uuid: String,
+    pub title: String,
+    pub content: String,
+    #[serde(default)]
+    pub fields_json: Option<String>,
+    #[serde(default)]
+    pub is_pinned: bool,
+    #[serde(default)]
+    pub color: Option<String>,
+    pub position: i64,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
 /// Deletion tombstone — propagates deletes across devices
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Tombstone {

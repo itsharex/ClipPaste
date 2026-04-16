@@ -1,6 +1,6 @@
 [package]
 name = "clippaste"
-version = "1.8.6"
+version = "1.9.0"
 description = "A beautiful clipboard history manager"
 authors = ["Phieu-Tran"]
 license = "GPL-3.0"

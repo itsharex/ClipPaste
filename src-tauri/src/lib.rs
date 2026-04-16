@@ -485,7 +485,14 @@ pub fn run_app() {
             commands::save_sync_settings,
             commands::gdrive_authorize,
             commands::gdrive_disconnect,
-            commands::sync_now
+            commands::sync_now,
+            commands::get_scratchpads,
+            commands::create_scratchpad,
+            commands::update_scratchpad,
+            commands::delete_scratchpad,
+            commands::reorder_scratchpads,
+            commands::toggle_scratchpad_pin,
+            commands::scratchpad_paste
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

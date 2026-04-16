@@ -82,6 +82,18 @@
 | 🖼️ | **Image Sync** | Optionally sync image clips (toggle on/off, 10MB limit) |
 | 🗑️ | **Deletion Propagation** | Deletes sync across devices via tombstones (30-day TTL) |
 
+### Scratchpad
+
+| | Feature | Description |
+|:---:|:---|:---|
+| 📝 | **Sidebar Notes** | Persistent notes panel docked to screen edge — independent of clipboard |
+| 🎯 | **Edit Before Paste** | Click note → centered modal to edit → Ctrl+Enter to paste |
+| 🎨 | **Color Notes** | 8 color presets with subtle gradient tint |
+| 📌 | **Pin Notes** | Pin important notes to the top |
+| 🔍 | **Search Notes** | Filter notes by title or content |
+| 🖱️ | **Hover Expand** | Collapsed tab on screen edge, hover to expand |
+| ☁️ | **Synced** | Notes sync across devices via Google Drive |
+
 ### Appearance & System
 
 | | Feature | Description |

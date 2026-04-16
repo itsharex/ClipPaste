@@ -21,6 +21,7 @@ import { useBatchActions } from './hooks/useBatchActions';
 import { useWindowLifecycle } from './hooks/useWindowLifecycle';
 import { useSearch } from './hooks/useSearch';
 import { useMultiSelect } from './hooks/useMultiSelect';
+import { useScratchpad } from './hooks/useScratchpad';
 import { Toaster, toast } from 'sonner';
 import { LAYOUT } from './constants';
 
@@ -331,6 +332,9 @@ function App() {
     }
   };
 
+  // --- Scratchpad (auto-starts as separate window on right edge) ---
+  const { toggle: toggleScratchpad } = useScratchpad();
+
   // --- Batch Actions (extracted hook) ---
   const { handleBulkDelete, handleBulkMove, handleBulkPaste } = useBatchActions({
     selectedClipIds, setSelectedClipIds, setSelectedClipId, setClips,
@@ -458,6 +462,7 @@ function App() {
             onClipFilterChange={setClipFilter}
             isIncognito={isIncognito}
             onToggleIncognito={toggleIncognito}
+            onToggleScratchpad={toggleScratchpad}
           />
 
           <main
