@@ -499,6 +499,7 @@ pub fn run_app() {
             commands::add_ignored_app,
             commands::remove_ignored_app,
             commands::get_ignored_apps,
+            commands::pick_foreground_app,
             commands::pick_file,
             commands::get_layout_config,
             commands::test_log,

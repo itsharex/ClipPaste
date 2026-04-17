@@ -1,12 +1,20 @@
 import { Settings } from '../../types';
+import { useState } from 'react';
 import {
   X,
   Trash2,
   Plus,
   FolderOpen,
+  Crosshair,
 } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
+
+interface PickedApp {
+  app_name: string | null;
+  exe_name: string | null;
+  full_path: string | null;
+}
 
 interface GeneralTabProps {
   settings: Settings;
@@ -69,6 +77,37 @@ export function GeneralTab({
     } catch (e) {
       toast.error(`Failed to add ignored app: ${e}`);
       console.error(e);
+    }
+  };
+
+  // Target mode: countdown that captures whichever app is focused when it expires.
+  const [targetCountdown, setTargetCountdown] = useState<number | null>(null);
+
+  const handleTargetApp = async () => {
+    if (targetCountdown !== null) return;
+    const DELAY_SEC = 4;
+    setTargetCountdown(DELAY_SEC);
+    toast.info(`Switch to the app you want to block — capturing in ${DELAY_SEC}s`);
+
+    const tick = setInterval(() => {
+      setTargetCountdown((v) => (v !== null && v > 1 ? v - 1 : v));
+    }, 1000);
+
+    try {
+      const picked = await invoke<PickedApp>('pick_foreground_app', { delayMs: DELAY_SEC * 1000 });
+      // Prefer exe name (what the ignore check compares against). Fall back to display name.
+      const target = picked.exe_name || picked.app_name || '';
+      if (!target || target.toLowerCase().includes('clippaste')) {
+        toast.error('Could not capture a different app — try again and switch to the target app before the countdown ends.');
+      } else {
+        setNewIgnoredApp(target);
+        toast.success(`Captured: ${target} — click + to block`);
+      }
+    } catch (e) {
+      toast.error(`Failed to capture app: ${e}`);
+    } finally {
+      clearInterval(tick);
+      setTargetCountdown(null);
     }
   };
 
@@ -258,6 +297,18 @@ export function GeneralTab({
               className="flex-1 rounded-lg border border-border bg-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
               onKeyDown={(e) => e.key === 'Enter' && handleAddIgnoredApp()}
             />
+            <button
+              onClick={handleTargetApp}
+              disabled={targetCountdown !== null}
+              className="btn btn-secondary px-3"
+              title="Target a running app — switch to it within the countdown"
+            >
+              {targetCountdown !== null ? (
+                <span className="text-xs font-semibold">{targetCountdown}s</span>
+              ) : (
+                <Crosshair size={16} />
+              )}
+            </button>
             <button
               onClick={handleBrowseFile}
               className="btn btn-secondary px-3"

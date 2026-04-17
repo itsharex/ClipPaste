@@ -696,6 +696,42 @@ pub fn calculate_hash(content: &[u8]) -> String {
 
 // ========== PLATFORM-SPECIFIC: Source app detection ==========
 
+/// Read the current foreground window's app info (name + exe + full path).
+/// Used by the settings "target app" picker, not by clipboard capture.
+#[cfg(target_os = "windows")]
+pub fn get_foreground_app_info() -> Option<crate::commands::settings::PickedApp> {
+    use crate::commands::settings::PickedApp;
+    unsafe {
+        let hwnd = GetForegroundWindow();
+        if hwnd.0.is_null() { return None; }
+
+        let mut process_id = 0;
+        GetWindowThreadProcessId(hwnd, Some(&mut process_id));
+        if process_id == 0 { return None; }
+
+        let process_handle = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, process_id).ok()?;
+
+        let mut name_buf = [0u16; MAX_PATH as usize];
+        let name_size = GetModuleBaseNameW(process_handle, None, &mut name_buf);
+        let exe_name = (name_size > 0).then(|| String::from_utf16_lossy(&name_buf[..name_size as usize]));
+
+        let mut path_buf = [0u16; MAX_PATH as usize];
+        let path_size = GetModuleFileNameExW(Some(process_handle), None, &mut path_buf);
+        let full_path = (path_size > 0).then(|| String::from_utf16_lossy(&path_buf[..path_size as usize]));
+
+        let app_name = full_path.as_deref()
+            .and_then(|p| get_app_description(p))
+            .or_else(|| exe_name.clone());
+
+        Some(PickedApp { app_name, exe_name, full_path })
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn get_foreground_app_info() -> Option<crate::commands::settings::PickedApp> {
+    None
+}
+
 #[cfg(target_os = "windows")]
 fn get_clipboard_owner_app_info() -> (Option<String>, Option<String>, Option<String>, Option<String>, bool) {
     unsafe {

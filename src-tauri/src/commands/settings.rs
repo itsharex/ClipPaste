@@ -300,3 +300,21 @@ pub async fn remove_ignored_app(app_name: String, db: tauri::State<'_, Arc<Datab
 pub async fn get_ignored_apps(db: tauri::State<'_, Arc<Database>>) -> Result<Vec<String>, String> {
     db.get_ignored_apps().await.map_err(|e| e.to_string())
 }
+
+/// Waits `delay_ms` (capped at 10s) then reads the current foreground window and returns
+/// its app display name + exe filename. Used by the "target app" eyedropper in settings so
+/// the user can pick an app to block without having to type the exe name.
+#[tauri::command]
+pub async fn pick_foreground_app(delay_ms: Option<u64>) -> Result<PickedApp, String> {
+    let delay = delay_ms.unwrap_or(3000).min(10_000);
+    tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+    crate::clipboard::get_foreground_app_info()
+        .ok_or_else(|| "Could not read foreground app".to_string())
+}
+
+#[derive(serde::Serialize)]
+pub struct PickedApp {
+    pub app_name: Option<String>,
+    pub exe_name: Option<String>,
+    pub full_path: Option<String>,
+}

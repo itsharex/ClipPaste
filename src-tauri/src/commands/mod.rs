@@ -1,6 +1,6 @@
 pub mod clips;
 mod folders;
-mod settings;
+pub mod settings;
 mod data;
 mod window;
 pub mod helpers;

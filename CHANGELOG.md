@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.10.1] - 2026-04-17
+
+### Added
+- **Target-app picker in Ignored Applications**: crosshair button next to the app input; click it, switch to the app you want to block within the 4-second countdown, and its exe name is captured automatically. No more hunting for process names — useful when you only realize a background app should be ignored after you see its clips appear.
+- Backend command `pick_foreground_app(delay_ms)` that sleeps then reads the Win32 foreground window (process name + exe path + display name).
+
+---
+
 ## [1.10.0] - 2026-04-17
 
 ### Added — Scratchpad UX
