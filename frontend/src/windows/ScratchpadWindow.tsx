@@ -79,8 +79,8 @@ function getNoteColorStyle(color: string | null): React.CSSProperties {
 const COLLAPSED_WIDTH = 16;
 const COLLAPSED_HEIGHT = 100;
 const EXPANDED_WIDTH = 320;
-const MODAL_WIDTH = 520;
-const MODAL_HEIGHT = 420;
+const MODAL_WIDTH = 680;
+const MODAL_HEIGHT = 520;
 
 type ViewMode = 'collapsed' | 'list' | 'paste' | 'edit';
 
@@ -534,26 +534,26 @@ export function ScratchpadWindow() {
     if (!item) { goBack(); return null; }
 
     return (
-      <div className="flex h-full w-full flex-col overflow-hidden rounded-2xl border border-border/20 bg-background/95 text-foreground shadow-2xl backdrop-blur-xl">
+      <div className="flex h-full w-full flex-col overflow-hidden rounded-xl border border-border/20 bg-background/95 text-foreground shadow-2xl backdrop-blur-xl">
         {/* Header */}
-        <div className="flex items-center gap-2 border-b border-border/30 px-4 py-3" data-tauri-drag-region>
+        <div className="flex items-center gap-2 border-b border-border/30 px-3 py-2" data-tauri-drag-region>
           <button onClick={goBack} className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground" title="Back">
-            <ChevronLeft size={16} />
+            <ChevronLeft size={15} />
           </button>
           {isPaste
-            ? <ClipboardPaste size={16} className="text-primary" />
-            : <Pencil size={16} className="text-amber-400" />
+            ? <ClipboardPaste size={14} className="text-primary" />
+            : <Pencil size={14} className="text-amber-400" />
           }
           <span className="flex-1 truncate text-sm font-semibold text-foreground/90">
             {isPaste ? (item.title || 'Paste snippet') : 'Edit note'}
           </span>
           <button onClick={handleClose} className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground" title="Close">
-            <X size={16} />
+            <X size={15} />
           </button>
         </div>
 
         {/* Content */}
-        <div className="flex flex-1 flex-col overflow-y-auto p-4">
+        <div className="flex flex-1 flex-col overflow-y-auto p-3">
           {isPaste ? (
             <textarea
               ref={pasteTextareaRef}
@@ -563,17 +563,17 @@ export function ScratchpadWindow() {
                 if (e.key === 'Escape') goBack();
                 if (e.key === 'Enter' && e.ctrlKey) doPaste();
               }}
-              className="h-full w-full flex-1 resize-none rounded-xl border border-border/30 bg-input/30 px-4 py-3 text-sm leading-relaxed text-foreground outline-none focus:border-primary/50"
+              className="h-full w-full flex-1 resize-none rounded-lg border border-border/30 bg-input/30 px-3 py-2 text-[13px] leading-relaxed text-foreground outline-none focus:border-primary/50"
             />
           ) : (
             <>
               <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Title</label>
               <input ref={titleRef} value={editTitle} onChange={(e) => setEditTitle(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Escape') goBack(); }}
-                className="mb-3 w-full rounded-lg border border-border/30 bg-input/30 px-3 py-2 text-sm font-semibold text-foreground outline-none focus:border-primary/50"
+                className="mb-2.5 w-full rounded-lg border border-border/30 bg-input/30 px-3 py-2 text-[13px] font-semibold text-foreground outline-none focus:border-primary/50"
                 placeholder="Title..." />
               <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Color</label>
-              <div className="mb-3 flex items-center gap-1.5">
+              <div className="mb-2.5 flex items-center gap-1.5">
                 <button onClick={() => setEditColor(null)}
                   className={clsx('rounded-full border-2 p-1', !editColor ? 'border-foreground/60' : 'border-transparent')}
                   title="No color">
@@ -592,26 +592,26 @@ export function ScratchpadWindow() {
                   if (e.key === 'Escape') goBack();
                   if (e.key === 'Enter' && e.ctrlKey) saveEdit();
                 }}
-                className="w-full flex-1 resize-none rounded-xl border border-border/30 bg-input/30 px-3 py-2 text-sm leading-relaxed text-foreground outline-none focus:border-primary/50"
-                rows={6} placeholder="Content..." />
+                className="w-full flex-1 resize-none rounded-lg border border-border/30 bg-input/30 px-3 py-2 text-[13px] leading-relaxed text-foreground outline-none focus:border-primary/50"
+                rows={10} placeholder="Content..." />
             </>
           )}
         </div>
 
         {/* Actions */}
-        <div className="flex items-center justify-between border-t border-border/30 px-4 py-3">
+        <div className="flex items-center justify-between border-t border-border/30 px-3 py-2">
           <span className="text-[10px] text-muted-foreground/60">
             {isPaste ? 'Ctrl+Enter to paste · Esc to cancel' : 'Ctrl+Enter to save · Esc to cancel'}
           </span>
           {isPaste ? (
             <button onClick={doPaste}
-              className="flex items-center gap-2 rounded-xl bg-primary px-6 py-2.5 text-sm font-bold text-primary-foreground transition-colors hover:bg-primary/90 active:bg-primary/80">
-              <ClipboardPaste size={16} /> Paste
+              className="flex items-center gap-2 rounded-lg bg-primary px-5 py-2 text-xs font-bold text-primary-foreground transition-colors hover:bg-primary/90 active:bg-primary/80">
+              <ClipboardPaste size={14} /> Paste
             </button>
           ) : (
             <div className="flex gap-2">
-              <button onClick={goBack} className="rounded-lg px-4 py-2 text-xs text-muted-foreground hover:bg-accent">Cancel</button>
-              <button onClick={saveEdit} className="rounded-lg bg-primary/20 px-4 py-2 text-xs font-semibold text-primary hover:bg-primary/30">Save</button>
+              <button onClick={goBack} className="rounded-md px-3.5 py-1.5 text-xs text-muted-foreground hover:bg-accent">Cancel</button>
+              <button onClick={saveEdit} className="rounded-md bg-primary/20 px-3.5 py-1.5 text-xs font-semibold text-primary hover:bg-primary/30">Save</button>
             </div>
           )}
         </div>

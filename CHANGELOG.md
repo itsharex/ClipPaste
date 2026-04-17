@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.10.3] - 2026-04-17
+
+### Changed
+- **Scratchpad modal resized**: paste/edit modal bumped from 520×420 to 680×520 for more editing room. Content textarea rows 6 → 10.
+- **Tighter padding**: header/actions `py-3` → `py-2`, content `p-4` → `p-3`.
+- **Text sizing**: content/title inputs use `text-[13px]` (was 14px, briefly 11px — settled on readable middle ground). Section labels `text-[10px]`, button labels `text-xs`.
+
+---
+
 ## [1.10.2] - 2026-04-17
 
 ### Fixed
