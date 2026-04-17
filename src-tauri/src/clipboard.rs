@@ -72,6 +72,12 @@ pub static APP_ICONS_CACHE: Lazy<parking_lot::RwLock<std::collections::HashMap<S
 /// Incognito mode: when true, clipboard changes are not captured
 pub static IS_INCOGNITO: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+/// Snapshot of the foreground HWND taken before a helper window (scratchpad) steals focus.
+/// Used by `scratchpad_paste` to route Shift+Insert back to the user's target app.
+/// Stored as isize because raw pointers aren't Send, but HWND is just an opaque handle.
+#[cfg(target_os = "windows")]
+pub static PREV_FOREGROUND_HWND: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+
 use std::sync::atomic::{AtomicU64, Ordering};
 static DEBOUNCE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -731,6 +737,64 @@ pub fn get_foreground_app_info() -> Option<crate::commands::settings::PickedApp>
 pub fn get_foreground_app_info() -> Option<crate::commands::settings::PickedApp> {
     None
 }
+
+/// Snapshot the current foreground HWND. Called before a helper window steals focus
+/// so we can restore the user's target app for keyboard paste routing.
+#[cfg(target_os = "windows")]
+pub fn capture_prev_foreground() {
+    unsafe {
+        let hwnd = GetForegroundWindow();
+        // Skip our own windows — finding the scratchpad or settings window here means the
+        // user was already inside ClipPaste, and restoring it isn't what they want.
+        if hwnd.0.is_null() { return; }
+        let mut process_id = 0u32;
+        GetWindowThreadProcessId(hwnd, Some(&mut process_id));
+        let own_pid = std::process::id();
+        if process_id != own_pid {
+            PREV_FOREGROUND_HWND.store(hwnd.0 as isize, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn capture_prev_foreground() {}
+
+/// Try to restore focus to the previously captured foreground window.
+/// Uses the standard Win32 focus-stealing bypass (attach input thread briefly).
+/// Returns true if the restore succeeded.
+#[cfg(target_os = "windows")]
+pub fn restore_prev_foreground() -> bool {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        SetForegroundWindow, IsWindow, BringWindowToTop,
+    };
+    use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
+
+    let stored = PREV_FOREGROUND_HWND.load(std::sync::atomic::Ordering::SeqCst);
+    if stored == 0 { return false; }
+    let hwnd = HWND(stored as *mut _);
+
+    unsafe {
+        if !IsWindow(Some(hwnd)).as_bool() { return false; }
+
+        // AttachThreadInput trick: Windows blocks SetForegroundWindow from one thread to
+        // another unless their input queues are attached. We attach briefly, foreground
+        // the target, then detach.
+        let mut tid = 0u32;
+        GetWindowThreadProcessId(hwnd, Some(&mut tid));
+        let our_tid = GetCurrentThreadId();
+
+        let _ = AttachThreadInput(our_tid, tid, true);
+        let _ = BringWindowToTop(hwnd);
+        let ok = SetForegroundWindow(hwnd).as_bool();
+        let _ = AttachThreadInput(our_tid, tid, false);
+
+        ok
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn restore_prev_foreground() -> bool { false }
 
 #[cfg(target_os = "windows")]
 fn get_clipboard_owner_app_info() -> (Option<String>, Option<String>, Option<String>, Option<String>, bool) {

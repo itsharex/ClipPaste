@@ -237,7 +237,10 @@ export function ScratchpadWindow() {
   filteredRef.current = filtered;
 
   // ── Window positioning ──
-  const appWindow = getCurrentWindow();
+  // Memoize the window handle — getCurrentWindow() returns a fresh proxy on each call,
+  // which made the moveTo* callbacks unstable and caused the position useEffect to re-run
+  // on every render, producing a hide→resize→show flicker during typing.
+  const appWindow = useMemo(() => getCurrentWindow(), []);
 
   const moveToSide = useCallback(async () => {
     isResizingRef.current = true;
@@ -316,6 +319,9 @@ export function ScratchpadWindow() {
   const handleMouseEnter = useCallback(() => {
     if (isResizingRef.current || mode !== 'collapsed') return;
     cancelCollapse();
+    // Snapshot whichever app the user is currently in BEFORE we grab focus — paste later
+    // routes Shift+Insert back to that HWND. Fire-and-forget.
+    invoke('capture_prev_foreground').catch(() => {});
     setMode('list');
   }, [mode, cancelCollapse]);
 

@@ -404,6 +404,9 @@ pub fn run_app() {
                 let app_handle_for_sp = app_handle.clone();
                 let _ = app_handle.global_shortcut().on_shortcut(sp_shortcut, move |_app, _shortcut, event| {
                     if event.state() == ShortcutState::Pressed {
+                        // Snapshot the user's target app BEFORE scratchpad gets focus — we'll
+                        // restore foreground to this HWND before simulating Shift+Insert.
+                        crate::clipboard::capture_prev_foreground();
                         if let Some(sp_win) = app_handle_for_sp.get_webview_window("scratchpad") {
                             let _ = sp_win.show();
                             let _ = sp_win.emit("scratchpad-toggle", ());
@@ -536,7 +539,8 @@ pub fn run_app() {
             commands::delete_scratchpad,
             commands::reorder_scratchpads,
             commands::toggle_scratchpad_pin,
-            commands::scratchpad_paste
+            commands::scratchpad_paste,
+            commands::capture_prev_foreground
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

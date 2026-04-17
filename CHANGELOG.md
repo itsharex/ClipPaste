@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.10.2] - 2026-04-17
+
+### Fixed
+- **Scratchpad paste now reaches the target app**: previously, `scratchpad_paste` just hid the panel and fired Shift+Insert, which sometimes landed on the wrong window (Windows didn't always restore the user's previous app as foreground in time, especially for `alwaysOnTop` panels). Now we snapshot `GetForegroundWindow()` via a new `capture_prev_foreground` command (fired on scratchpad hotkey + on mouse-enter of the collapsed tab) and use the `AttachThreadInput` + `SetForegroundWindow` + `BringWindowToTop` trick to reliably re-front the target app before sending keystrokes.
+- **Edit modal flicker while typing**: `getCurrentWindow()` returns a fresh proxy on each call, which made the `moveToSide/Center/Collapsed` callbacks unstable. Their dependent `useEffect` re-ran on every React render, triggering a hide→resize→show cycle on every keystroke. Memoized the window handle with `useMemo` — editing is smooth now.
+
+---
+
 ## [1.10.1] - 2026-04-17
 
 ### Added
