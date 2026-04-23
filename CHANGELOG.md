@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.10.5] - 2026-04-23
+
+### Fixed
+- **Stray Alt/Win tap on paste (menu bar flashes in Notepad, focus bounces in SecureCRT)**: `send_paste_input` unconditionally injected KEYUP for every modifier (Ctrl, Alt, LWin, RWin) before the Shift+Insert sequence as a "belt-and-suspenders" cleanup. But on Windows, an orphan KEYUP for Alt or Win — with no preceding KEYDOWN and no other key in between — is treated by the target app as a full press-and-release: Alt activates the menu bar, Win opens the Start menu. Symptom was intermittent because it depended on what the target app did with an unpaired KEYUP. Now we poll `GetAsyncKeyState` for each of Ctrl / Alt / LWin / RWin and only emit KEYUP for modifiers that are actually held. This also matters for users who switch virtual desktops via Ctrl+Win+Arrow, where Win can briefly still register as held when the paste fires.
+
+---
+
 ## [1.10.4] - 2026-04-20
 
 ### Fixed

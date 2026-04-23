@@ -1079,8 +1079,6 @@ pub fn send_paste_input() {
     }
 
     unsafe {
-        // Belt-and-suspenders: still inject KEYUPs so the sync message-queue state
-        // matches expectations even if the physical release hasn't fully propagated.
         let keyup = |vk| INPUT {
             r#type: INPUT_KEYBOARD,
             Anonymous: windows::Win32::UI::Input::KeyboardAndMouse::INPUT_0 {
@@ -1101,12 +1099,36 @@ pub fn send_paste_input() {
             },
         };
 
-        let release_mods = vec![
-            keyup(VK_CONTROL), keyup(VK_LCONTROL), keyup(VK_RCONTROL),
-            keyup(VK_MENU), keyup(VK_LMENU), keyup(VK_RMENU),
-            keyup(VK_LWIN), keyup(VK_RWIN),
-        ];
-        SendInput(&release_mods, std::mem::size_of::<INPUT>() as i32);
+        // Only inject KEYUP for modifiers that are actually held. A stray KEYUP for
+        // Alt or Win without a preceding KEYDOWN is treated by apps as a press-and-
+        // release tap: Alt activates the menu bar (Notepad File/Edit/…), and Win
+        // opens the Start menu. This also matters after Ctrl+Win+Arrow virtual-
+        // desktop switches, where Win may still briefly register as held.
+        let ctrl_held = ((GetAsyncKeyState(VK_CONTROL.0 as i32) as u16) & 0x8000) != 0;
+        let menu_held = ((GetAsyncKeyState(VK_MENU.0 as i32) as u16) & 0x8000) != 0;
+        let lwin_held = ((GetAsyncKeyState(VK_LWIN.0 as i32) as u16) & 0x8000) != 0;
+        let rwin_held = ((GetAsyncKeyState(VK_RWIN.0 as i32) as u16) & 0x8000) != 0;
+
+        let mut release_mods: Vec<INPUT> = Vec::new();
+        if ctrl_held {
+            release_mods.push(keyup(VK_LCONTROL));
+            release_mods.push(keyup(VK_RCONTROL));
+            release_mods.push(keyup(VK_CONTROL));
+        }
+        if menu_held {
+            release_mods.push(keyup(VK_LMENU));
+            release_mods.push(keyup(VK_RMENU));
+            release_mods.push(keyup(VK_MENU));
+        }
+        if lwin_held {
+            release_mods.push(keyup(VK_LWIN));
+        }
+        if rwin_held {
+            release_mods.push(keyup(VK_RWIN));
+        }
+        if !release_mods.is_empty() {
+            SendInput(&release_mods, std::mem::size_of::<INPUT>() as i32);
+        }
 
         let inputs = vec![
             keydown(VK_SHIFT),
