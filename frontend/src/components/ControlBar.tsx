@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { FolderItem } from '../types';
-import { Search, Plus, MoreHorizontal, X, Layers, FileText, Image, Link, EyeOff, Flame, Mail, Palette, FolderOpen, Phone, Braces, Code2, StickyNote } from 'lucide-react';
+import { Search, Plus, MoreHorizontal, X, Layers, FileText, Image, Link, EyeOff, Flame, Sparkles, Mail, Palette, FolderOpen, Phone, Braces, Code2, StickyNote } from 'lucide-react';
 import { clsx } from 'clsx';
 import { FOLDER_ICON_MAP } from './FolderModal';
 import { type LucideIcon } from 'lucide-react';
@@ -224,6 +224,7 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
     const raw: { id: string | null; name: string; count: number; color?: string | null; icon?: string | null; isVirtual?: boolean }[] = [
       { id: null, name: 'All', count: totalClipCount, icon: null },
       { id: '__frequent__', name: 'Frequent', count: 0, icon: null, color: null, isVirtual: true },
+      { id: '__smart__', name: 'Smart', count: 0, icon: null, color: null, isVirtual: true },
       ...folders.map((f) => ({ ...f, count: f.item_count })),
     ];
     if (!searchQuery.trim()) return raw;
@@ -371,6 +372,14 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
               : (theme === 'light'
                 ? 'bg-orange-400 text-white hover:bg-orange-500 hover:text-white drop-shadow-sm'
                 : 'bg-orange-400/10 text-white/80 hover:bg-orange-400/20 hover:text-white drop-shadow-sm');
+          } else if (cat.id === '__smart__') {
+            colorClass = isActive
+              ? (theme === 'light'
+                ? 'bg-violet-600 text-white ring-2 ring-violet-500/50 font-bold drop-shadow-sm'
+                : 'bg-violet-400/30 text-white ring-2 ring-violet-500/50 font-bold drop-shadow-sm')
+              : (theme === 'light'
+                ? 'bg-violet-400 text-white hover:bg-violet-500 hover:text-white drop-shadow-sm'
+                : 'bg-violet-400/10 text-white/80 hover:bg-violet-400/20 hover:text-white drop-shadow-sm');
           } else {
             const style = getFolderColor(cat.name, cat.color);
             colorClass = isActive ? style.active : style.inactive;
@@ -387,7 +396,7 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
                 onSelectFolder(cat.id);
               }}
               onMouseDown={(e) => {
-                if (e.button !== 0 || !cat.id || cat.id === '__frequent__') return;
+                if (e.button !== 0 || !cat.id || cat.id === '__frequent__' || cat.id === '__smart__') return;
                 folderDragRef.current = { id: cat.id, startX: e.clientX, started: false };
               }}
               onMouseEnter={() => handleMouseEnter(cat.id)}
@@ -407,7 +416,7 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
                 // Drop is handled by App.tsx finishDrag via dragStateRef
               }}
               onContextMenu={(e) => {
-                if (onFolderContextMenu && cat.id && cat.id !== '__frequent__') {
+                if (onFolderContextMenu && cat.id && cat.id !== '__frequent__' && cat.id !== '__smart__') {
                   onFolderContextMenu(e, cat.id);
                 }
               }}
@@ -436,6 +445,8 @@ export const ControlBar = React.forwardRef<HTMLInputElement, ControlBarProps>(fu
                 <Layers size={14} className="mr-1 inline-block opacity-80" />
               ) : cat.id === '__frequent__' ? (
                 <Flame size={14} className="mr-1 inline-block text-orange-400" />
+              ) : cat.id === '__smart__' ? (
+                <Sparkles size={14} className="mr-1 inline-block text-violet-400" />
               ) : cat.icon && FOLDER_ICON_MAP[cat.icon] ? (
                 (() => {
                   const { Icon: FolderIcon, color } = FOLDER_ICON_MAP[cat.icon];

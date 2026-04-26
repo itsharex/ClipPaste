@@ -111,6 +111,30 @@ pub async fn get_clips(filter_id: Option<String>, limit: i64, offset: i64, previ
             .bind(offset)
             .fetch_all(pool).await.map_err(|e| e.to_string())?
         }
+        Some("__smart__") => {
+            // Smart ranking: paste_count weighted by recency (7-day halflife on last paste).
+            // Pinned always first; only includes clips with at least 1 paste.
+            log::debug!("Querying for smart-ranked clips");
+            sqlx::query_as(r#"
+                SELECT id, uuid, clip_type,
+                       CASE WHEN clip_type = 'image' THEN content ELSE X'' END as content,
+                       text_preview, content_hash,
+                       folder_id, is_deleted, source_app, source_icon, metadata,
+                       created_at, last_accessed, last_pasted_at, is_pinned,
+                       subtype, note, paste_count, is_sensitive, updated_at
+                FROM clips
+                WHERE paste_count >= 1
+                ORDER BY is_pinned DESC,
+                         (CAST(paste_count AS REAL) /
+                           (1.0 + (julianday('now') - julianday(COALESCE(last_pasted_at, created_at))) / 7.0)
+                         ) DESC,
+                         created_at DESC
+                LIMIT ? OFFSET ?
+            "#)
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(pool).await.map_err(|e| e.to_string())?
+        }
         Some(id) => {
             let folder_id_num = id.parse::<i64>().ok();
             if let Some(numeric_id) = folder_id_num {

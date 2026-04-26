@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.10.7] - 2026-04-26
+
+### Added
+- **Inspect folder contents from Settings → Folders**: each folder row is now expandable inline, revealing the clips inside (preview, type icon, note, relative timestamp). Per-clip hover actions to **Move** (with searchable folder picker) or **Delete**. Built for users with many folders who need to audit which clips landed where without leaving Settings. Lazy-loaded with `previewOnly: true` so image BLOBs aren't decoded.
+- **Smart virtual category**: new "Smart" pill in the category bar alongside "Frequent". Ranks clips by `paste_count` weighted by recency on `last_pasted_at` (7-day halflife), pinned clips always first, only includes clips with at least one paste. Useful when "Frequent" is dominated by old high-count clips that are no longer relevant.
+
+---
+
 ## [1.10.6] - 2026-04-23
 
 ### Fixed
