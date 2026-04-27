@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**ClipPaste** is a cross-platform clipboard history manager for **Windows and Linux**, built with **Tauri v2** (Rust backend) + **React/TypeScript** (frontend). Package name: `clippaste`, version: `1.10.7`.
+**ClipPaste** is a cross-platform clipboard history manager for **Windows and Linux**, built with **Tauri v2** (Rust backend) + **React/TypeScript** (frontend). Package name: `clippaste`, version: `1.10.8`.
 
 ### Platform Support
 

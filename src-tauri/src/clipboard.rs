@@ -738,6 +738,40 @@ pub fn get_foreground_app_info() -> Option<crate::commands::settings::PickedApp>
     None
 }
 
+/// Returns true if the current foreground window's app is in the user's Ignored list.
+/// Used to suppress hotkey activation and auto-paste when the user is in a protected app.
+pub fn is_foreground_app_ignored(db: &std::sync::Arc<crate::database::Database>) -> bool {
+    let info = match get_foreground_app_info() {
+        Some(i) => i,
+        None => return false,
+    };
+    let rt = match crate::models::get_runtime() {
+        Ok(r) => r,
+        Err(_) => return false,
+    };
+    let db = db.clone();
+    rt.block_on(async move {
+        if let Some(ref path) = info.full_path {
+            if db.is_app_ignored(path).await.unwrap_or(false) {
+                return true;
+            }
+            // Some apps (PUBG anti-cheat etc.) block GetModuleBaseNameW so exe_name is
+            // None — fall back to extracting the filename from the full path.
+            if let Some(name) = std::path::Path::new(path).file_name().and_then(|s| s.to_str()) {
+                if db.is_app_ignored(name).await.unwrap_or(false) {
+                    return true;
+                }
+            }
+        }
+        if let Some(ref exe) = info.exe_name {
+            if db.is_app_ignored(exe).await.unwrap_or(false) {
+                return true;
+            }
+        }
+        false
+    })
+}
+
 /// Snapshot the current foreground HWND. Called before a helper window steals focus
 /// so we can restore the user's target app for keyboard paste routing.
 #[cfg(target_os = "windows")]

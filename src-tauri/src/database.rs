@@ -881,9 +881,21 @@ impl Database {
     }
 
     pub async fn is_app_ignored(&self, app_name: &str) -> Result<bool, sqlx::Error> {
-        // Case-insensitive check might be better for Windows exe names
-        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM ignored_apps WHERE LOWER(app_name) = LOWER(?)")
+        // Match input AND its `.exe`-stripped form vs both stored values and their
+        // `.exe`-stripped forms — so a user can list "TslGame" or "TslGame.exe" and
+        // it matches a foreground exe of "TslGame.exe" either way.
+        let stripped = app_name
+            .strip_suffix(".exe")
+            .or_else(|| app_name.strip_suffix(".EXE"))
+            .unwrap_or(app_name);
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM ignored_apps \
+             WHERE LOWER(app_name) = LOWER(?1) \
+                OR LOWER(app_name) = LOWER(?2) \
+                OR LOWER(REPLACE(REPLACE(app_name, '.exe', ''), '.EXE', '')) = LOWER(?2)",
+        )
             .bind(app_name)
+            .bind(stripped)
             .fetch_one(&self.pool)
             .await?;
         Ok(count > 0)

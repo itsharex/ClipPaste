@@ -377,11 +377,18 @@ pub fn run_app() {
 
             if let Ok(shortcut) = Shortcut::from_str(&saved_hotkey) {
                 let win_clone = win.clone();
+                let db_for_main_hotkey = db_for_clipboard.clone();
                 let _ = app_handle.global_shortcut().on_shortcut(shortcut, move |_app, _shortcut, event| {
                     if event.state() == ShortcutState::Pressed {
-                        if win_clone.is_visible().unwrap_or(false) && win_clone.is_focused().unwrap_or(false) {
+                        let already_open = win_clone.is_visible().unwrap_or(false) && win_clone.is_focused().unwrap_or(false);
+                        if already_open {
                             crate::animate_window_hide(&win_clone, None);
                         } else {
+                            // Suppress hotkey when foreground app is in the Ignored list.
+                            if crate::clipboard::is_foreground_app_ignored(&db_for_main_hotkey) {
+                                log::info!("HOTKEY: Suppressed (foreground app is ignored)");
+                                return;
+                            }
                             position_window_at_bottom(&win_clone);
                             let _ = win_clone.show();
                             let _ = win_clone.set_focus();
@@ -402,8 +409,14 @@ pub fn run_app() {
 
             if let Ok(sp_shortcut) = Shortcut::from_str(&scratchpad_hotkey) {
                 let app_handle_for_sp = app_handle.clone();
+                let db_for_sp_hotkey_cb = db_for_clipboard.clone();
                 let _ = app_handle.global_shortcut().on_shortcut(sp_shortcut, move |_app, _shortcut, event| {
                     if event.state() == ShortcutState::Pressed {
+                        // Suppress hotkey when foreground app is in the Ignored list.
+                        if crate::clipboard::is_foreground_app_ignored(&db_for_sp_hotkey_cb) {
+                            log::info!("HOTKEY: Scratchpad suppressed (foreground app is ignored)");
+                            return;
+                        }
                         // Snapshot the user's target app BEFORE scratchpad gets focus — we'll
                         // restore foreground to this HWND before simulating Shift+Insert.
                         crate::clipboard::capture_prev_foreground();

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.10.8] - 2026-04-27
+
+### Added
+- **Ignored apps now also block hotkey + auto-paste**: previously the Ignored Applications list only suppressed clipboard recording from the named app, but the global hotkey still opened ClipPaste over a fullscreen game and auto-paste still fired keystrokes into it. Now, when the foreground window belongs to an ignored app, `Ctrl+Shift+V` (main) and `Ctrl+Shift+S` (scratchpad) are silently swallowed and `Shift+Insert` is not sent — the app stays completely invisible to that process. Match logic also accepts entries with or without `.exe`, and falls back to extracting the filename from the full path for apps like PUBG / Valorant whose anti-cheat blocks `GetModuleBaseNameW` (so a foreground exe of `None` with `path=…\TslGame.exe` still matches an entry of `TslGame`).
+
+---
+
 ## [1.10.7] - 2026-04-26
 
 ### Added

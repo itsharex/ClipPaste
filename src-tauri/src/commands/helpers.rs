@@ -125,19 +125,28 @@ pub async fn clipboard_write_image(app: &AppHandle, image_path: &str, content_ha
 
 /// Check auto_paste setting and hide the window accordingly.
 pub fn check_auto_paste_and_hide(window: &tauri::WebviewWindow) {
+    use tauri::Manager;
     let auto_paste = crate::clipboard::get_cached_setting("auto_paste")
         .and_then(|v| v.parse::<bool>().ok())
         .unwrap_or(true);
 
     if auto_paste {
         let window_clone = window.clone();
+        let db = window.app_handle().state::<std::sync::Arc<crate::database::Database>>().inner().clone();
         crate::animate_window_hide(window, Some(Box::new(move || {
             #[cfg(target_os = "windows")]
             {
                 std::thread::sleep(std::time::Duration::from_millis(200));
-                crate::clipboard::send_paste_input();
+                // After hide+sleep the foreground window IS the paste target.
+                // Skip the keystroke if the target app is in the Ignored list.
+                if crate::clipboard::is_foreground_app_ignored(&db) {
+                    log::info!("PASTE: Suppressed Shift+Insert (target app is ignored)");
+                } else {
+                    crate::clipboard::send_paste_input();
+                }
             }
             let _ = &window_clone; // suppress unused warning on non-Windows
+            let _ = &db;
         })));
     } else {
         crate::animate_window_hide(window, None);

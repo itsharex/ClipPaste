@@ -158,6 +158,7 @@ pub async fn scratchpad_paste(
     text: String,
     app: AppHandle,
     window: tauri::WebviewWindow,
+    db: tauri::State<'_, Arc<Database>>,
 ) -> Result<(), String> {
     use sha2::{Sha256, Digest};
 
@@ -185,7 +186,12 @@ pub async fn scratchpad_paste(
             log::warn!("SCRATCHPAD: prev-foreground restore failed, Shift+Insert may miss target");
         }
         tokio::time::sleep(std::time::Duration::from_millis(80)).await;
-        crate::clipboard::send_paste_input();
+        let db_arc = db.inner().clone();
+        if crate::clipboard::is_foreground_app_ignored(&db_arc) {
+            log::info!("SCRATCHPAD: Suppressed Shift+Insert (target app is ignored)");
+        } else {
+            crate::clipboard::send_paste_input();
+        }
         tokio::time::sleep(std::time::Duration::from_millis(80)).await;
     }
     #[cfg(not(target_os = "windows"))]
